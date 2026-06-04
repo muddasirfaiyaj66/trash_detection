@@ -1,0 +1,33 @@
+# ── YOLO Dataset Folders (Track directories, ignore contents) ─────────────────
+# Allow folders to be tracked
+!train/
+!test/
+!valid/
+
+# Ignore the actual large image and annotation files
+**/images/*
+!**/images/.gitkeep
+
+**/labels/*
+!**/labels/.gitkeep
+
+# Ignore YOLO training labels cache
+*.cache
+
+# ── YOLO Runs and Model Weights ───────────────────────────────────────────────
+runs/
+*.pt
+
+# ── Python Environment & Cache ────────────────────────────────────────────────
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ── IDEs & System Files ──────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

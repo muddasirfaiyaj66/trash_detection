@@ -1,0 +1,8 @@
+train: F:\trash_detection\train\images
+val: F:\trash_detection\valid\images
+test: F:\trash_detection\test\images
+
+
+nc: 5
+names: ['can', 'glass', 'paper', 'plastic', 'trash']
+
