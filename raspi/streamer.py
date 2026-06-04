@@ -13,7 +13,13 @@ import time
 import threading
 import logging
 from flask import Flask, Response, jsonify, render_template_string
-from flask_sock import Sock
+
+try:
+    from flask_sock import Sock
+    WEBSOCKET_AVAILABLE = True
+except ImportError:
+    Sock = None
+    WEBSOCKET_AVAILABLE = False
 
 from config import (
     STREAM_HOST, STREAM_PORT, MJPEG_QUALITY, MJPEG_MAX_FPS, ESP32_ENABLED,
@@ -24,7 +30,7 @@ from dustbin_api import dustbin_state, _lock
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)
-sock = Sock(app)
+sock = Sock(app) if WEBSOCKET_AVAILABLE else None
 
 import cv2
 import numpy as np
@@ -104,25 +110,27 @@ def video_feed():
     )
 
 
-@sock.route("/ws/video")
-def video_ws(ws):
-    """Low-latency JPEG frames over WebSocket (lower overhead than MJPEG multipart)."""
-    min_interval = 1.0 / MJPEG_MAX_FPS
-    last_sent = 0.0
-    while True:
-        now = time.time()
-        wait = min_interval - (now - last_sent)
-        if wait > 0:
-            time.sleep(wait)
-        with _frame_lock:
-            frame = _latest_frame
-        if frame is None:
-            frame = get_placeholder_frame()
-        try:
-            ws.send(frame)
-        except Exception:
-            break
-        last_sent = time.time()
+if WEBSOCKET_AVAILABLE:
+
+    @sock.route("/ws/video")
+    def video_ws(ws):
+        """Low-latency JPEG frames over WebSocket (lower overhead than MJPEG multipart)."""
+        min_interval = 1.0 / MJPEG_MAX_FPS
+        last_sent = 0.0
+        while True:
+            now = time.time()
+            wait = min_interval - (now - last_sent)
+            if wait > 0:
+                time.sleep(wait)
+            with _frame_lock:
+                frame = _latest_frame
+            if frame is None:
+                frame = get_placeholder_frame()
+            try:
+                ws.send(frame)
+            except Exception:
+                break
+            last_sent = time.time()
 
 
 @app.route("/status")
@@ -136,6 +144,10 @@ def status():
                 "usb_index": USB_CAMERA_INDEX,
                 "width": CAMERA_WIDTH,
                 "height": CAMERA_HEIGHT,
+            },
+            "stream": {
+                "mjpeg": True,
+                "websocket": WEBSOCKET_AVAILABLE,
             },
         }
     return jsonify(data)
@@ -531,7 +543,12 @@ function startWebSocketFeed() {
     setTimeout(startWebSocketFeed, 2000);
   };
 }
+{% if websocket_enabled %}
 startWebSocketFeed();
+{% else %}
+feedMode.textContent = 'MJPEG';
+feedImg.src = '/video_feed';
+{% endif %}
 
 function addLog(msg, type='') {
   const el = document.createElement('div');
@@ -646,7 +663,10 @@ setInterval(poll, 2000);
 
 @app.route("/")
 def dashboard():
-    return render_template_string(_DASHBOARD_HTML)
+    return render_template_string(
+        _DASHBOARD_HTML,
+        websocket_enabled=WEBSOCKET_AVAILABLE,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -665,3 +685,10 @@ def start_stream_server():
     )
     t.start()
     log.info("Stream server started → http://%s:%d/", STREAM_HOST, STREAM_PORT)
+    if WEBSOCKET_AVAILABLE:
+        log.info("WebSocket stream → ws://%s:%d/ws/video", STREAM_HOST, STREAM_PORT)
+    else:
+        log.warning(
+            "WebSocket disabled (install: pip install flask-sock simple-websocket). "
+            "Using MJPEG /video_feed only."
+        )
