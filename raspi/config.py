@@ -26,7 +26,7 @@ STREAM_HOST    = "0.0.0.0"
 #  │  Use the mDNS hostname — works as long as Pi & ESP32 are on same network │
 #  │  No need to know the IP. ESP32 uses DHCP so its IP may change.           │
 #  └──────────────────────────────────────────────────────────────────────────┘
-ESP32_HOST = "dustbin-controller.local"   # ← mDNS hostname (no change needed)
+ESP32_HOST = "dustbin-controller-team-infyra.local"   # ← mDNS hostname (no change needed)
 
 #  ┌─ OPTION B ────────────────────────────────────────────────────────────────┐
 #  │  Use a fixed IP — paste the IP printed on the ESP32 serial monitor here  │
