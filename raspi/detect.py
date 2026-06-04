@@ -24,8 +24,10 @@ from ultralytics import YOLO
 from config import (
     MODEL_PATH, CONFIDENCE, LINE_WIDTH,
     DETECT_CLASSES, CLASS_NAMES,
-    CAMERA_SOURCE, MJPEG_QUALITY,
+    CAMERA_SOURCE, CAMERA_TYPE, USB_CAMERA_INDEX,
+    MJPEG_QUALITY, ESP32_ENABLED,
 )
+from camera import initialize_camera, reopen_camera
 from dustbin_api import (
     on_detection,
     LidAutoCloseThread,
@@ -58,82 +60,6 @@ def encode_jpeg(frame: np.ndarray) -> bytes:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-def initialize_camera(source) -> cv2.VideoCapture | None:
-    """
-    Attempts to open a camera connection. Supports GStreamer libcamerasrc for Pi Camera v3,
-    V4L2 for USB cameras, and scans backup indices if the primary fails.
-    """
-    # If source is a string (e.g. RTSP url or file path), try it directly
-    if isinstance(source, str) and not source.isdigit():
-        log.info("Trying to open video stream/file: %s", source)
-        cap = cv2.VideoCapture(source)
-        if cap.isOpened():
-            return cap
-        return None
-
-    # Source is an integer index (or string digit)
-    idx = int(source)
-
-    # Method 1: Try GStreamer Libcamerasrc (recommended for Raspberry Pi Camera Module)
-    # Bookworm OS uses libcamerasrc which doesn't expose a standard v4l2 device
-    gst_pipeline = (
-        "libcamerasrc ! video/x-raw, width=640, height=480, framerate=30/1 ! "
-        "videoconvert ! appsink drop=true max-buffers=1"
-    )
-    log.info("Trying GStreamer pipeline for Pi Camera Module…")
-    try:
-        cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
-        if cap.isOpened():
-            log.info("Successfully opened Pi Camera via GStreamer/libcamerasrc ✓")
-            return cap
-    except Exception as e:
-        log.debug("GStreamer Pi Camera failed: %s", e)
-
-    # Method 2: Try V4L2 backend directly (Standard for USB Cameras on Linux/Pi)
-    log.info("Trying USB camera index %d using V4L2 backend…", idx)
-    try:
-        cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
-        if cap.isOpened():
-            # Test frame grab
-            ret, _ = cap.read()
-            if ret:
-                log.info("Successfully opened USB/V4L2 camera on index %d ✓", idx)
-                return cap
-            cap.release()
-    except Exception as e:
-        log.debug("V4L2 camera open failed: %s", e)
-
-    # Method 3: Try default OpenCV backend
-    log.info("Trying default camera backend on index %d…", idx)
-    try:
-        cap = cv2.VideoCapture(idx)
-        if cap.isOpened():
-            log.info("Successfully opened camera with default backend on index %d ✓", idx)
-            return cap
-    except Exception as e:
-        log.debug("Default backend failed: %s", e)
-
-    # Method 4: Scan alternative camera indices
-    log.info("Scanning alternative camera indices (0, 1, 2, 4)…")
-    for alt_idx in [0, 1, 2, 4]:
-        if alt_idx == idx:
-            continue
-        log.info("Trying index %d via V4L2…", alt_idx)
-        try:
-            cap = cv2.VideoCapture(alt_idx, cv2.CAP_V4L2)
-            if cap.isOpened():
-                ret, _ = cap.read()
-                if ret:
-                    log.info("Found working camera on alternative index %d ✓", alt_idx)
-                    return cap
-                cap.release()
-        except Exception:
-            pass
-
-    return None
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 def main():
     log.info("=" * 60)
     log.info("  Trash Detection – Raspberry Pi Node")
@@ -145,28 +71,55 @@ def main():
     model = YOLO(MODEL_PATH)
     log.info("Model loaded ✓")
 
-    # 2. Start background services
-    LidAutoCloseThread().start()
-    FillLevelPoller().start()
+    # 2. Start background services (ESP32 optional for streaming-only runs)
+    if ESP32_ENABLED:
+        LidAutoCloseThread().start()
+        FillLevelPoller().start()
+    else:
+        log.info("ESP32 disabled – stream and detection only (no lid/level API)")
     start_stream_server()
 
     # 3. Open camera
-    log.info("Opening camera source: %s", CAMERA_SOURCE)
+    if CAMERA_TYPE == "usb":
+        log.info("Camera: USB webcam (index %d)", USB_CAMERA_INDEX)
+    elif CAMERA_TYPE == "pi":
+        log.info("Camera: Pi Camera Module (Picamera2 / libcamera)")
+    else:
+        log.info("Camera: auto (USB index %d, then Pi cam)", USB_CAMERA_INDEX)
     cap = initialize_camera(CAMERA_SOURCE)
     if cap is None:
-        log.error("CRITICAL: Cannot open any camera source (checked GStreamer and V4L2)")
+        log.error(
+            "CRITICAL: Cannot open camera (CAMERA_TYPE=%s). "
+            "See raspi/README.md — USB: v4l2-ctl; Pi: picamera2",
+            CAMERA_TYPE,
+        )
         return
 
     log.info("Camera opened ✓  –  Starting detection loop…")
     log.info("Ground-station stream → http://0.0.0.0:5000/")
 
+    fail_streak = 0
     try:
         while True:
             ret, frame = cap.read()
-            if not ret:
-                log.warning("Frame grab failed – retrying…")
-                time.sleep(0.1)
+            if not ret or frame is None or frame.size == 0:
+                fail_streak += 1
+                if fail_streak == 1 or fail_streak % 10 == 0:
+                    log.warning(
+                        "Frame grab failed (%d consecutive) – retrying…",
+                        fail_streak,
+                    )
+                if fail_streak >= 50:
+                    new_cap = reopen_camera(cap)
+                    if new_cap is not None:
+                        cap = new_cap
+                        fail_streak = 0
+                        log.info("Camera reopened")
+                    else:
+                        log.error("Could not reopen camera")
+                time.sleep(0.05)
                 continue
+            fail_streak = 0
 
             # 4. Run YOLO inference (stream=True is memory-efficient)
             results = model.predict(

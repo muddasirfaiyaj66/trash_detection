@@ -27,7 +27,10 @@ sudo apt-get install -y -qq \
     libopencv-dev python3-opencv \
     libatlas-base-dev libhdf5-dev \
     libjpeg-dev libpng-dev \
-    v4l-utils
+    v4l-utils \
+    gstreamer1.0-tools gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good libgstreamer1.0-dev \
+    python3-picamera2 python3-libcamera
 
 # ── Virtual environment ───────────────────────────────────────────────────────
 echo "▶ Creating Python virtual environment at $VENV_DIR …"

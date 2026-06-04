@@ -1,5 +1,8 @@
 ultralytics>=8.0.0
 flask>=3.0.0
+flask-sock>=0.7.0
+simple-websocket>=1.0.0
 requests>=2.31.0
 opencv-python-headless>=4.8.0
 numpy>=1.24.0
+# Pi Camera Module on Bookworm (install on Pi only): pip install picamera2

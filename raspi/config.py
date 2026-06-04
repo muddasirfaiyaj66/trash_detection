@@ -2,6 +2,8 @@
 # config.py  –  Raspberry Pi – Trash Detection System
 # ─────────────────────────────────────────────────────────────────────────────
 
+import os
+
 # ── Model ─────────────────────────────────────────────────────────────────────
 MODEL_PATH     = "best.pt"   # copy best.pt into the raspi/ folder
 CONFIDENCE     = 0.6
@@ -12,10 +14,40 @@ LINE_WIDTH     = 2
 DETECT_CLASSES = [2, 3]
 CLASS_NAMES    = {2: "paper", 3: "plastic"}
 
-# ── Camera ────────────────────────────────────────────────────────────────────
-CAMERA_SOURCE  = 0          # 0 = /dev/video0 (USB cam); change to Pi Camera RTSP if needed
+# ── Camera (pick ONE type for your hardware) ──────────────────────────────────
+#
+#   CAMERA_TYPE = "usb"   → USB webcam via /dev/videoN (V4L2)
+#   CAMERA_TYPE = "pi"    → Raspberry Pi Camera Module (Picamera2 / libcamera)
+#   CAMERA_TYPE = "auto"  → try USB first, then Pi cam (good if unsure)
+#
+# Override without editing this file:
+#   CAMERA_TYPE=pi python detect.py
+#
+CAMERA_TYPE = os.environ.get("CAMERA_TYPE", "usb")   # "usb" | "pi" | "auto"
+
+# USB webcam (/dev/video0, /dev/video1, … — run: v4l2-ctl --list-devices)
+USB_CAMERA_INDEX = int(os.environ.get("USB_CAMERA_INDEX", "0"))
+
+# Resolution used for both USB and Pi cam (stream + YOLO)
+CAMERA_WIDTH   = 640
+CAMERA_HEIGHT  = 480
+CAMERA_WARMUP_FRAMES = 15   # discard frames while the sensor warms up
+
+# Legacy alias (detect.py / camera.py read CAMERA_SOURCE from this)
+def _camera_source():
+    if CAMERA_TYPE == "pi":
+        return "libcamera"
+    if CAMERA_TYPE == "usb":
+        return USB_CAMERA_INDEX
+    return USB_CAMERA_INDEX  # auto: USB index first, Pi cam tried in camera.py
+
+CAMERA_SOURCE = _camera_source()
+
 STREAM_PORT    = 5000
 STREAM_HOST    = "0.0.0.0"
+
+# Set False to run detection + dashboard stream without the ESP32 on the network
+ESP32_ENABLED  = True
 
 # ── ESP32-S3 Dustbin Controller ───────────────────────────────────────────────
 #

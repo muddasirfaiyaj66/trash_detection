@@ -10,7 +10,7 @@ from config import (
     PAPER_LID_OPEN_EP, PAPER_LID_CLOSE_EP, PAPER_STATUS_EP,
     PLASTIC_LID_OPEN_EP, PLASTIC_LID_CLOSE_EP, PLASTIC_STATUS_EP,
     LID_OPEN_DURATION, LEVEL_POLL_INTERVAL, API_TIMEOUT,
-    CLASS_NAMES,
+    CLASS_NAMES, ESP32_ENABLED,
 )
 
 log = logging.getLogger(__name__)
@@ -35,23 +35,29 @@ CLASS_TO_BIN = {2: "paper", 3: "plastic"}
 # ─────────────────────────────────────────────────────────────────────────────
 def _post(url: str, payload: dict = None) -> dict | None:
     """HTTP POST with timeout; returns JSON or None on error."""
+    if not ESP32_ENABLED:
+        return None
     try:
         r = requests.post(url, json=payload or {}, timeout=API_TIMEOUT)
         r.raise_for_status()
         return r.json() if r.content else {}
     except Exception as e:
-        log.warning("API POST failed [%s]: %s", url, e)
+        if ESP32_ENABLED:
+            log.warning("API POST failed [%s]: %s", url, e)
         return None
 
 
 def _get(url: str) -> dict | None:
     """HTTP GET with timeout; returns JSON or None on error."""
+    if not ESP32_ENABLED:
+        return None
     try:
         r = requests.get(url, timeout=API_TIMEOUT)
         r.raise_for_status()
         return r.json() if r.content else {}
     except Exception as e:
-        log.warning("API GET failed [%s]: %s", url, e)
+        if ESP32_ENABLED:
+            log.warning("API GET failed [%s]: %s", url, e)
         return None
 
 
@@ -105,6 +111,8 @@ class LidAutoCloseThread(threading.Thread):
         super().__init__(daemon=True, name="LidAutoClose")
 
     def run(self):
+        if not ESP32_ENABLED:
+            return
         log.info("LidAutoCloseThread started (timeout=%.1fs)", LID_OPEN_DURATION)
         while True:
             time.sleep(0.5)
@@ -127,6 +135,9 @@ class FillLevelPoller(threading.Thread):
         super().__init__(daemon=True, name="FillLevelPoller")
 
     def run(self):
+        if not ESP32_ENABLED:
+            log.info("FillLevelPoller skipped (ESP32_ENABLED=False)")
+            return
         log.info("FillLevelPoller started (interval=%.1fs)", LEVEL_POLL_INTERVAL)
         while True:
             for bin_name, url in _STATUS_EP.items():

@@ -13,13 +13,18 @@ import time
 import threading
 import logging
 from flask import Flask, Response, jsonify, render_template_string
+from flask_sock import Sock
 
-from config import STREAM_HOST, STREAM_PORT, MJPEG_QUALITY, MJPEG_MAX_FPS
+from config import (
+    STREAM_HOST, STREAM_PORT, MJPEG_QUALITY, MJPEG_MAX_FPS, ESP32_ENABLED,
+    CAMERA_TYPE, USB_CAMERA_INDEX, CAMERA_WIDTH, CAMERA_HEIGHT,
+)
 from dustbin_api import dustbin_state, _lock
 
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)
+sock = Sock(app)
 
 import cv2
 import numpy as np
@@ -55,7 +60,7 @@ def get_placeholder_frame() -> bytes:
     text_sz = cv2.getTextSize(text, font, 0.6, 2)[0]
     cv2.putText(img, text, ((640 - text_sz[0]) // 2, 240), font, 0.6, (226, 232, 240), 2, cv2.LINE_AA)
     
-    sub = "Trying GStreamer (Pi Cam v3) & V4L2 (USB Cams)"
+    sub = f"Mode: {CAMERA_TYPE} | {CAMERA_WIDTH}x{CAMERA_HEIGHT}"
     sub_sz = cv2.getTextSize(sub, font, 0.45, 1)[0]
     cv2.putText(img, sub, ((640 - sub_sz[0]) // 2, 280), font, 0.45, (100, 116, 139), 1, cv2.LINE_AA)
     
@@ -99,12 +104,39 @@ def video_feed():
     )
 
 
+@sock.route("/ws/video")
+def video_ws(ws):
+    """Low-latency JPEG frames over WebSocket (lower overhead than MJPEG multipart)."""
+    min_interval = 1.0 / MJPEG_MAX_FPS
+    last_sent = 0.0
+    while True:
+        now = time.time()
+        wait = min_interval - (now - last_sent)
+        if wait > 0:
+            time.sleep(wait)
+        with _frame_lock:
+            frame = _latest_frame
+        if frame is None:
+            frame = get_placeholder_frame()
+        try:
+            ws.send(frame)
+        except Exception:
+            break
+        last_sent = time.time()
+
+
 @app.route("/status")
 def status():
     with _lock:
         data = {
             "paper":   dict(dustbin_state["paper"]),
             "plastic": dict(dustbin_state["plastic"]),
+            "camera": {
+                "type": CAMERA_TYPE,
+                "usb_index": USB_CAMERA_INDEX,
+                "width": CAMERA_WIDTH,
+                "height": CAMERA_HEIGHT,
+            },
         }
     return jsonify(data)
 
@@ -127,7 +159,14 @@ def update_config():
     if close_deg is not None:
         params["close"] = int(close_deg)
 
-    # Forward the configuration to the ESP32
+    if not ESP32_ENABLED:
+        with _lock:
+            if open_deg is not None:
+                dustbin_state[bin_name]["open_deg"] = int(open_deg)
+            if close_deg is not None:
+                dustbin_state[bin_name]["close_deg"] = int(close_deg)
+        return jsonify({"status": "ok", "config": dustbin_state[bin_name], "esp32": False})
+
     from config import ESP32_HOST, API_TIMEOUT
     url = f"http://{ESP32_HOST}/api/dustbin/{bin_name}/config"
     try:
@@ -371,6 +410,7 @@ _DASHBOARD_HTML = """
   <div class="video-card">
     <div class="video-label">📡 Raspberry Pi Camera</div>
     <img id="feed" src="/video_feed" alt="Live YOLO Detection Feed">
+    <div id="feed-mode" style="position:absolute;bottom:12px;right:12px;font-size:.65rem;color:var(--muted);"></div>
   </div>
 
   <!-- Sidebar -->
@@ -459,7 +499,39 @@ _DASHBOARD_HTML = """
 
 <script>
 const logBox    = document.getElementById('log-box');
+const feedImg   = document.getElementById('feed');
+const feedMode  = document.getElementById('feed-mode');
 let   prevState = { paper: {}, plastic: {} };
+let   wsUrl     = null;
+let   videoWs   = null;
+let   lastBlobUrl = null;
+
+function startWebSocketFeed() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  wsUrl = proto + '//' + location.host + '/ws/video';
+  videoWs = new WebSocket(wsUrl);
+  videoWs.binaryType = 'arraybuffer';
+  videoWs.onopen = () => {
+    feedMode.textContent = 'WebSocket (low latency)';
+    feedImg.removeAttribute('src');
+  };
+  videoWs.onmessage = (ev) => {
+    const blob = new Blob([ev.data], { type: 'image/jpeg' });
+    const url = URL.createObjectURL(blob);
+    feedImg.src = url;
+    if (lastBlobUrl) URL.revokeObjectURL(lastBlobUrl);
+    lastBlobUrl = url;
+  };
+  videoWs.onerror = () => {
+    feedMode.textContent = 'MJPEG fallback';
+    feedImg.src = '/video_feed';
+  };
+  videoWs.onclose = () => {
+    if (!feedImg.src || feedImg.src.indexOf('video_feed') >= 0) return;
+    setTimeout(startWebSocketFeed, 2000);
+  };
+}
+startWebSocketFeed();
 
 function addLog(msg, type='') {
   const el = document.createElement('div');
