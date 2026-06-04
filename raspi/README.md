@@ -162,7 +162,17 @@ journalctl -u trash_detection -f
 If logs show **"Successfully opened camera"** then endless **"Frame grab failed"**:
 
 1. The old code treated `isOpened()` as success without reading a frame. Pull the latest `camera.py` / `detect.py` — every backend now **must pass a real frame** before starting.
-2. **Pi Camera Module**: set `CAMERA_TYPE = "pi"` (not USB index `0`). Install Picamera2: `sudo apt install -y python3-picamera2` (included in `setup.sh`).
+2. **Pi Camera Module**: set `CAMERA_TYPE = "pi"`. Install system packages:
+   ```bash
+   sudo apt install -y python3-picamera2 python3-libcamera rpicam-apps
+   libcamera-hello -t 2000   # must show a preview
+   ```
+   If you use a **venv**, it must see apt packages:
+   ```bash
+   python3 -m venv --system-site-packages ~/trash_detection/venv
+   source ~/trash_detection/venv/bin/activate
+   ```
+   Or run without venv: `python3 detect.py`
 3. **USB webcam**: set `CAMERA_TYPE = "usb"`, run `v4l2-ctl --list-devices`, set `USB_CAMERA_INDEX` to the right `/dev/videoN`.
 4. **Stream without ESP32**: set `ESP32_ENABLED = False` to stop mDNS/API noise; the dashboard at `:5000/` still streams.
 5. Check one frame manually:

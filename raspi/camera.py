@@ -2,8 +2,13 @@
 # camera.py  –  Reliable camera open + frame capture for Raspberry Pi
 # ─────────────────────────────────────────────────────────────────────────────
 
+import os
+import sys
+import site
 import time
 import logging
+import subprocess
+from shutil import which
 import cv2
 import numpy as np
 
@@ -17,6 +22,32 @@ from config import (
 )
 
 log = logging.getLogger(__name__)
+
+# Raspberry Pi OS installs picamera2 here; venvs often cannot see it otherwise.
+_PI_SITE_PATHS = (
+    "/usr/lib/python3/dist-packages",
+    "/usr/local/lib/python3/dist-packages",
+)
+
+
+def _enable_system_packages() -> None:
+    """Allow importing apt packages (picamera2) from a project venv."""
+    for path in _PI_SITE_PATHS:
+        if os.path.isdir(path) and path not in sys.path:
+            sys.path.insert(0, path)
+    try:
+        for path in site.getsitepackages():
+            if path not in sys.path:
+                sys.path.append(path)
+    except Exception:
+        pass
+
+
+def _opencv_has_gstreamer() -> bool:
+    try:
+        return "GStreamer:                   YES" in cv2.getBuildInformation()
+    except Exception:
+        return False
 
 
 def _configure_capture(cap: cv2.VideoCapture) -> None:
@@ -50,15 +81,23 @@ class Picamera2Capture:
     """Picamera2 backend for Pi Camera Module on Bookworm (libcamera)."""
 
     def __init__(self):
-        from picamera2 import Picamera2  # optional dependency
+        _enable_system_packages()
+        from picamera2 import Picamera2
+
+        infos = Picamera2.global_camera_info()
+        if not infos:
+            raise RuntimeError(
+                "No Pi camera detected. Check ribbon cable and run: libcamera-hello -t 2000"
+            )
 
         self._picam = Picamera2()
-        cfg = self._picam.create_preview_configuration(
+        # video_configuration works headless; preview needs a display
+        cfg = self._picam.create_video_configuration(
             main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"}
         )
         self._picam.configure(cfg)
         self._picam.start()
-        time.sleep(0.8)
+        time.sleep(1.0)
         self._opened = True
 
     def isOpened(self) -> bool:
@@ -82,11 +121,93 @@ class Picamera2Capture:
         self._opened = False
 
 
+class RpicamVidCapture:
+    """
+    Fallback when picamera2/GStreamer are unavailable but rpicam-apps is installed.
+    Reads MJPEG frames from: rpicam-vid -t 0 --codec mjpeg -o -
+    """
+
+    SOI = b"\xff\xd8"
+    EOI = b"\xff\xd9"
+
+    def __init__(self, binary: str = "rpicam-vid"):
+        cmd = [
+            binary,
+            "-t", "0",
+            "--width", str(CAMERA_WIDTH),
+            "--height", str(CAMERA_HEIGHT),
+            "--codec", "mjpeg",
+            "--flush",
+            "--nopreview",
+            "-o", "-",
+        ]
+        self._proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            bufsize=0,
+        )
+        self._buf = b""
+        self._opened = self._proc.stdout is not None
+        if not self._opened:
+            raise RuntimeError("rpicam-vid failed to start")
+
+    def isOpened(self) -> bool:
+        return self._opened and self._proc.poll() is None
+
+    def _read_jpeg(self) -> bytes | None:
+        out = self._proc.stdout
+        if out is None:
+            return None
+        chunk = out.read(4096)
+        if not chunk:
+            return None
+        self._buf += chunk
+        start = self._buf.find(self.SOI)
+        end = self._buf.find(self.EOI, start + 2)
+        if start < 0 or end < 0:
+            if len(self._buf) > 512_000:
+                self._buf = self._buf[-64_000:]
+            return None
+        end += 2
+        jpeg = self._buf[start:end]
+        self._buf = self._buf[end:]
+        return jpeg
+
+    def read(self):
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            jpeg = self._read_jpeg()
+            if jpeg:
+                frame = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+                if frame is not None and frame.size > 0:
+                    return True, frame
+            time.sleep(0.01)
+        return False, None
+
+    def release(self):
+        try:
+            self._proc.terminate()
+            self._proc.wait(timeout=2)
+        except Exception:
+            try:
+                self._proc.kill()
+            except Exception:
+                pass
+        self._opened = False
+
+
 def _try_picamera2() -> Picamera2Capture | None:
+    _enable_system_packages()
     try:
         from picamera2 import Picamera2  # noqa: F401
     except ImportError:
-        log.debug("picamera2 not installed – skip Pi Camera Module path")
+        log.warning(
+            "Picamera2 not importable in this Python. Fix with either:\n"
+            "  sudo apt install -y python3-picamera2\n"
+            "  python3 -m venv --system-site-packages ../venv   (recreate venv)\n"
+            "  pip install picamera2   (on Pi only)"
+        )
         return None
 
     log.info("Trying Picamera2 (Pi Camera Module / libcamera)…")
@@ -97,27 +218,76 @@ def _try_picamera2() -> Picamera2Capture | None:
             log.info("Successfully opened Pi Camera via Picamera2")
             return cap
         cap.release()
+        log.warning("Picamera2 opened but returned no frames")
     except Exception as e:
-        log.info("Picamera2 unavailable: %s", e)
+        log.warning("Picamera2 failed: %s", e)
     return None
 
 
-def _try_gstreamer() -> cv2.VideoCapture | None:
-    gst_pipeline = (
-        f"libcamerasrc ! video/x-raw,width={CAMERA_WIDTH},height={CAMERA_HEIGHT},"
-        f"framerate=30/1 ! videoconvert ! video/x-raw,format=BGR ! "
-        "appsink drop=true max-buffers=1 sync=false"
-    )
-    log.info("Trying GStreamer pipeline for Pi Camera Module…")
+def _try_gstreamer_pipeline(pipeline: str, label: str) -> cv2.VideoCapture | None:
+    if not _opencv_has_gstreamer():
+        return None
+    log.info("Trying GStreamer: %s…", label)
     try:
-        cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
-        if cap.isOpened() and _verify_capture(cap, "GStreamer/libcamerasrc", warmup=15):
-            log.info("Successfully opened Pi Camera via GStreamer")
+        cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
+        if cap.isOpened() and _verify_capture(cap, label, warmup=20):
+            log.info("Successfully opened Pi Camera via GStreamer (%s)", label)
             return cap
         if cap.isOpened():
             cap.release()
     except Exception as e:
-        log.debug("GStreamer Pi Camera failed: %s", e)
+        log.debug("GStreamer [%s] failed: %s", label, e)
+    return None
+
+
+def _try_gstreamer_pi() -> cv2.VideoCapture | None:
+    if not _opencv_has_gstreamer():
+        log.warning(
+            "OpenCV was built without GStreamer (common with pip opencv). "
+            "Use Picamera2 or: sudo apt install python3-opencv"
+        )
+        return None
+
+    pipelines = [
+        (
+            f"libcamerasrc ! video/x-raw,width={CAMERA_WIDTH},height={CAMERA_HEIGHT},"
+            f"framerate=30/1 ! videoconvert ! video/x-raw,format=BGR ! "
+            "appsink drop=true max-buffers=1 sync=false",
+            "libcamerasrc",
+        ),
+    ]
+    for dev in ("/dev/video0", "/dev/video1", "/dev/video2"):
+        if os.path.exists(dev):
+            pipelines.append(
+                (
+                    f"v4l2src device={dev} ! video/x-raw,width={CAMERA_WIDTH},"
+                    f"height={CAMERA_HEIGHT} ! videoconvert ! "
+                    "video/x-raw,format=BGR ! appsink drop=true max-buffers=1 sync=false",
+                    f"v4l2src {dev}",
+                ),
+            )
+
+    for pipeline, label in pipelines:
+        cap = _try_gstreamer_pipeline(pipeline, label)
+        if cap is not None:
+            return cap
+    return None
+
+
+def _try_rpicam_vid() -> RpicamVidCapture | None:
+    for binary in ("rpicam-vid", "libcamera-vid"):
+        if not which(binary):
+            continue
+        log.info("Trying %s (libcamera CLI)…", binary)
+        try:
+            cap = RpicamVidCapture(binary=binary)
+            ret, frame = cap.read()
+            if ret and frame is not None and frame.size > 0:
+                log.info("Successfully opened Pi Camera via %s", binary)
+                return cap
+            cap.release()
+        except Exception as e:
+            log.warning("%s failed: %s", binary, e)
     return None
 
 
@@ -138,12 +308,40 @@ def _try_index(idx: int, backend: int | None, label: str) -> cv2.VideoCapture | 
     return None
 
 
-def _open_pi_camera() -> Picamera2Capture | cv2.VideoCapture | None:
-    """Pi Camera Module: Picamera2, then GStreamer/libcamerasrc."""
+def _open_pi_camera():
+    """
+    Pi Camera Module — try in order:
+      1. Picamera2 (apt / system-site-packages)
+      2. GStreamer libcamerasrc / v4l2src
+      3. rpicam-vid subprocess
+      4. V4L2 /dev/videoN via OpenCV
+    """
     cap = _try_picamera2()
     if cap is not None:
         return cap
-    return _try_gstreamer()
+
+    cap = _try_gstreamer_pi()
+    if cap is not None:
+        return cap
+
+    cap = _try_rpicam_vid()
+    if cap is not None:
+        return cap
+
+    log.info("Trying Pi cam as V4L2 device (libcamera compat layer)…")
+    for idx in (0, 1, 2):
+        cap = _try_index(idx, cv2.CAP_V4L2, f"Pi/V4L2 index {idx}")
+        if cap is not None:
+            return cap
+
+    log.error(
+        "Pi camera failed. On the Pi run:\n"
+        "  libcamera-hello -t 2000\n"
+        "  sudo apt install -y python3-picamera2 rpicam-apps\n"
+        "  v4l2-ctl --list-devices\n"
+        "If using a venv: python3 -m venv --system-site-packages ~/trash_detection/venv"
+    )
+    return None
 
 
 def _open_usb_camera(idx: int = USB_CAMERA_INDEX) -> cv2.VideoCapture | None:
@@ -190,7 +388,6 @@ def initialize_camera(source=CAMERA_SOURCE):
         idx = int(source) if str(source).isdigit() else USB_CAMERA_INDEX
         return _open_usb_camera(idx)
 
-    # auto: USB first, then Pi cam
     cap = _open_usb_camera(USB_CAMERA_INDEX)
     if cap is not None:
         return cap

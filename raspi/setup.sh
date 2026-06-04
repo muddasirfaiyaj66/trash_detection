@@ -34,7 +34,8 @@ sudo apt-get install -y -qq \
 
 # ── Virtual environment ───────────────────────────────────────────────────────
 echo "▶ Creating Python virtual environment at $VENV_DIR …"
-python3 -m venv "$VENV_DIR"
+# --system-site-packages: picamera2 from apt is visible inside the venv
+python3 -m venv --system-site-packages "$VENV_DIR"
 source "$VENV_DIR/bin/activate"
 
 echo "▶ Upgrading pip…"
