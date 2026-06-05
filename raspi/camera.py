@@ -24,6 +24,8 @@ from config import (
     CAMERA_WIDE_FOV,
     STREAM_FPS,
     USB_FOURCC,
+    USB_V4L2_SET_FORMAT,
+    USB_GSTREAMER,
 )
 
 log = logging.getLogger(__name__)
@@ -408,26 +410,6 @@ def _try_index(idx: int, backend: int | None, label: str) -> cv2.VideoCapture | 
     return None
 
 
-def _try_device_path(path: str, label: str) -> cv2.VideoCapture | None:
-    """Try opening /dev/videoN directly before index-based probing."""
-    if not os.path.exists(path):
-        return None
-
-    log.info("Trying %s on %s...", label, path)
-    for backend, backend_name in ((cv2.CAP_V4L2, "V4L2"), (None, "default")):
-        try:
-            cap = cv2.VideoCapture(path) if backend is None else cv2.VideoCapture(path, backend)
-            if cap.isOpened() and _verify_capture(cap, f"{label} {path} ({backend_name})"):
-                log.info("Successfully opened camera: %s via %s", path, backend_name)
-                return cap
-            if cap.isOpened():
-                cap.release()
-        except Exception as e:
-            log.debug("%s failed on %s via %s: %s", label, path, backend_name, e)
-
-    return None
-
-
 def _list_v4l2_indices() -> list[int]:
     """Discover available /dev/videoN indices dynamically."""
     found = []
@@ -474,43 +456,169 @@ def _open_pi_camera():
     return None
 
 
-def _open_usb_camera(idx: int = USB_CAMERA_INDEX) -> cv2.VideoCapture | None:
-    """USB webcam via V4L2, then default backend, then other /dev/video indices."""
-    cap = _try_device_path(f"/dev/video{idx}", "USB device path")
-    if cap is not None:
-        return cap
+def _v4l2_can_capture(device: str) -> bool:
+    """
+    True if `device` is a real video-capture node (not metadata / Orbbec depth).
+    Uses v4l2-ctl when available; otherwise assumes True (probing will confirm).
+    """
+    if not which("v4l2-ctl"):
+        return True
+    try:
+        out = subprocess.run(
+            ["v4l2-ctl", "-d", device, "--all"],
+            capture_output=True, text=True, timeout=3,
+        ).stdout
+        if "Video Capture" not in out:
+            return False
+        # Nodes that only expose metadata report no pixel formats we can use.
+        return True
+    except Exception:
+        return True
 
-    cap = _try_index(idx, cv2.CAP_V4L2, "V4L2 USB")
-    if cap is not None:
-        return cap
 
-    cap = _try_index(idx, None, "default USB backend")
-    if cap is not None:
-        return cap
+def _v4l2_supports_mjpg(device: str) -> bool:
+    if not which("v4l2-ctl"):
+        return True
+    try:
+        out = subprocess.run(
+            ["v4l2-ctl", "-d", device, "--list-formats"],
+            capture_output=True, text=True, timeout=3,
+        ).stdout
+        return "MJPG" in out or "Motion-JPEG" in out
+    except Exception:
+        return True
 
+
+def _v4l2_set_format(device: str) -> None:
+    """
+    Force resolution + MJPG + FPS at the DRIVER level before OpenCV opens it.
+    This is the most reliable fix: OpenCV's FFMPEG backend ignores CAP_PROP_*
+    and otherwise leaves the camera in slow 1080p raw mode (~5 FPS).
+    """
+    if not (USB_V4L2_SET_FORMAT and which("v4l2-ctl")):
+        return
+    fmt = (USB_FOURCC or "MJPG") if _v4l2_supports_mjpg(device) else "YUYV"
+    try:
+        subprocess.run(
+            ["v4l2-ctl", "-d", device,
+             f"--set-fmt-video=width={CAMERA_WIDTH},height={CAMERA_HEIGHT},pixelformat={fmt}"],
+            check=False, timeout=3,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["v4l2-ctl", "-d", device, f"--set-parm={STREAM_FPS}"],
+            check=False, timeout=3,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        log.info("v4l2-ctl forced %s → %dx%d %s @%d fps",
+                 device, CAMERA_WIDTH, CAMERA_HEIGHT, fmt, STREAM_FPS)
+    except Exception as e:
+        log.debug("v4l2-ctl set-fmt failed on %s: %s", device, e)
+
+
+def _open_usb_gstreamer(device: str) -> cv2.VideoCapture | None:
+    """Force MJPG@30 via a GStreamer v4l2src pipeline (most reliable for high FPS)."""
+    if not (USB_GSTREAMER and _opencv_has_gstreamer()):
+        return None
+    pipelines = [
+        (
+            f"v4l2src device={device} ! image/jpeg,width={CAMERA_WIDTH},"
+            f"height={CAMERA_HEIGHT},framerate={STREAM_FPS}/1 ! jpegdec ! "
+            "videoconvert ! video/x-raw,format=BGR ! appsink drop=true max-buffers=1 sync=false",
+            f"USB GStreamer MJPG {device}",
+        ),
+        (
+            f"v4l2src device={device} ! video/x-raw,width={CAMERA_WIDTH},"
+            f"height={CAMERA_HEIGHT} ! videoconvert ! video/x-raw,format=BGR ! "
+            "appsink drop=true max-buffers=1 sync=false",
+            f"USB GStreamer raw {device}",
+        ),
+    ]
+    for pipeline, label in pipelines:
+        log.info("Trying %s…", label)
+        try:
+            cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
+            if cap.isOpened() and _verify_capture(cap, label, warmup=20):
+                log.info("Successfully opened USB camera via %s", label)
+                return cap
+            if cap.isOpened():
+                cap.release()
+        except Exception as e:
+            log.debug("%s failed: %s", label, e)
+    return None
+
+
+def _try_v4l2_path(device: str) -> cv2.VideoCapture | None:
+    """Open a /dev/videoN node with the V4L2 backend + MJPG config."""
+    if not os.path.exists(device):
+        return None
+    log.info("Trying V4L2 backend on %s…", device)
+    try:
+        cap = cv2.VideoCapture(device, cv2.CAP_V4L2)
+        if cap.isOpened() and _verify_capture(cap, f"V4L2 {device}"):
+            log.info("Successfully opened USB camera: %s (V4L2)", device)
+            return cap
+        if cap.isOpened():
+            cap.release()
+    except Exception as e:
+        log.debug("V4L2 open failed on %s: %s", device, e)
+    return None
+
+
+def _usb_device_candidates(idx: int) -> list[str]:
+    """Ordered /dev/videoN paths to try, real capture nodes first."""
     discovered = _list_v4l2_indices()
-    fallback = [0, 1, 2, 3, 4]
-    ordered = [n for n in discovered if n != idx] + [n for n in fallback if n not in discovered and n != idx]
-    log.info("Scanning alternative USB indices: %s", ordered)
+    order: list[int] = []
+    if idx in discovered or os.path.exists(f"/dev/video{idx}"):
+        order.append(idx)
+    order += [n for n in discovered if n != idx]
+    if not order:
+        order = [idx, 0, 1, 2, 3, 4]
+    # Prefer nodes that v4l2-ctl reports as actual capture devices.
+    paths = [f"/dev/video{n}" for n in order]
+    capture = [p for p in paths if _v4l2_can_capture(p)]
+    rest = [p for p in paths if p not in capture]
+    return capture + rest
 
-    for alt_idx in ordered:
-        if alt_idx == idx:
+
+def _open_usb_camera(idx: int = USB_CAMERA_INDEX) -> cv2.VideoCapture | None:
+    """
+    USB webcam, robust against Pi quirks (Orbbec nodes, FFMPEG backend, 1080p
+    raw lock). For each real capture node we:
+      1. force MJPG/res/fps at driver level with v4l2-ctl
+      2. try GStreamer MJPG pipeline (best 30 FPS path)
+      3. try OpenCV V4L2 backend (honours MJPG)
+      4. fall back to default backend (last resort, may be slow)
+    """
+    candidates = _usb_device_candidates(idx)
+    log.info("USB capture candidates: %s", candidates)
+
+    for device in candidates:
+        _v4l2_set_format(device)
+
+        cap = _open_usb_gstreamer(device)
+        if cap is not None:
+            return cap
+
+        cap = _try_v4l2_path(device)
+        if cap is not None:
+            return cap
+
+    # Last resort: default backend by index (e.g. FFMPEG). Driver format was
+    # already forced above so this may now read MJPG instead of slow raw.
+    for device in candidates:
+        suffix = device.rsplit("video", 1)[-1]
+        if not suffix.isdigit():
             continue
-
-        cap = _try_device_path(f"/dev/video{alt_idx}", "USB device path")
-        if cap is not None:
-            return cap
-
-        cap = _try_index(alt_idx, cv2.CAP_V4L2, f"V4L2 USB index {alt_idx}")
-        if cap is not None:
-            return cap
-
-        cap = _try_index(alt_idx, None, f"default USB backend index {alt_idx}")
+        cap = _try_index(int(suffix), None, f"default USB backend {device}")
         if cap is not None:
             return cap
 
     log.error(
-        "USB camera not found/readable. Run 'v4l2-ctl --list-devices' and set USB_CAMERA_INDEX to the correct /dev/videoN"
+        "USB camera not found/readable. Diagnose with:\n"
+        "  v4l2-ctl --list-devices\n"
+        "  v4l2-ctl -d /dev/videoN --list-formats-ext\n"
+        "then set USB_CAMERA_INDEX=N (the node that lists MJPG/Video Capture)."
     )
     return None
 

@@ -25,14 +25,17 @@ CLASS_NAMES    = {2: "paper", 3: "plastic"}
 #
 CAMERA_TYPE = os.environ.get("CAMERA_TYPE", "usb")   # "usb" | "pi" | "auto"
 
-# USB webcam (/dev/video0, /dev/video1, … — run: v4l2-ctl --list-devices)
-USB_CAMERA_INDEX = int(os.environ.get("USB_CAMERA_INDEX", "0"))
+# USB webcam node. Run `v4l2-ctl --list-devices` and pick the node whose
+# `--list-formats-ext` shows MJPG (NOT the Pi's internal CSI/ISP nodes).
+# On this Pi the A4tech USB cam is /dev/video8.
+USB_CAMERA_INDEX = int(os.environ.get("USB_CAMERA_INDEX", "8"))
 
-# Resolution — lower = much higher FPS on the Pi. Wide FOV comes from the sensor
-# crop (CAMERA_WIDE_FOV) NOT the resolution, so 640x480 stays wide AND fast.
-#   640x480  → fast (recommended on Pi)        1280x720 → smoother image, lower FPS
-CAMERA_WIDTH   = int(os.environ.get("CAMERA_WIDTH", "640"))
-CAMERA_HEIGHT  = int(os.environ.get("CAMERA_HEIGHT", "480"))
+# Resolution — MUST be a size the camera actually advertises for MJPG, otherwise
+# the driver falls back to slow raw mode (~5 FPS). The A4tech cam offers MJPG at
+# 1920x1080 / 1280x720 / 800x600 @ 30fps (no 640x480 MJPG), so 720p is the sweet
+# spot: smooth 30 FPS, good quality, light to JPEG-decode on the Pi.
+CAMERA_WIDTH   = int(os.environ.get("CAMERA_WIDTH", "1280"))
+CAMERA_HEIGHT  = int(os.environ.get("CAMERA_HEIGHT", "720"))
 CAMERA_WARMUP_FRAMES = 15
 # Pi Camera: use full sensor crop (widest view, less “zoomed in”)
 CAMERA_WIDE_FOV = os.environ.get("CAMERA_WIDE_FOV", "true").lower() in ("1", "true", "yes")
@@ -111,7 +114,15 @@ MODEL_WARMUP_TIMEOUT = float(os.environ.get("MODEL_WARMUP_TIMEOUT", "3.0"))
 USB_FRAME_TIMEOUT = float(os.environ.get("USB_FRAME_TIMEOUT", "5.0"))  # max seconds to wait for a frame
 CAMERA_REOPEN_THRESHOLD = int(os.environ.get("CAMERA_REOPEN_THRESHOLD", "30"))  # re-open after N consecutive failures
 
-# MJPG lets most USB webcams hit 30 FPS; raw YUYV is often capped at ~5 FPS.
-# Must be applied BEFORE width/height (see camera.py). Set to "" to skip,
-# or "YUYV" if your specific camera does not support MJPG.
+# MJPG lets most USB webcams hit 30 FPS; raw YUYV/BGR3 is often capped at ~5 FPS.
+# Set to "" to skip, or "YUYV" if your specific camera does not support MJPG.
 USB_FOURCC = os.environ.get("USB_FOURCC", "MJPG")
+
+# Force the camera format at the V4L2 driver level with `v4l2-ctl` BEFORE OpenCV
+# opens it. This is the most reliable fix when OpenCV uses the FFMPEG backend
+# (which ignores resolution/FPS requests and leaves the cam in slow 1080p raw).
+USB_V4L2_SET_FORMAT = os.environ.get("USB_V4L2_SET_FORMAT", "true").lower() in ("1", "true", "yes")
+
+# Prefer a GStreamer v4l2src MJPG pipeline for USB (forces 30 FPS) when OpenCV
+# was built with GStreamer. Falls back automatically if unavailable.
+USB_GSTREAMER = os.environ.get("USB_GSTREAMER", "true").lower() in ("1", "true", "yes")
