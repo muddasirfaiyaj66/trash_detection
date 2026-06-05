@@ -109,5 +109,9 @@ MODEL_WARMUP_TIMEOUT = float(os.environ.get("MODEL_WARMUP_TIMEOUT", "3.0"))
 # ── USB Camera Optimization ────────────────────────────────────────────────────
 # Prevents camera shutdown and low FPS issues on Raspberry Pi USB
 USB_FRAME_TIMEOUT = float(os.environ.get("USB_FRAME_TIMEOUT", "5.0"))  # max seconds to wait for a frame
-USB_WARMUP_PARALLEL = os.environ.get("USB_WARMUP_PARALLEL", "true").lower() in ("1", "true", "yes")  # read warmup frames in parallel
-CAMERA_REOPEN_THRESHOLD = int(os.environ.get("CAMERA_REOPEN_THRESHOLD", "30"))  # re-open after 30 consecutive failures (instead of 60)
+CAMERA_REOPEN_THRESHOLD = int(os.environ.get("CAMERA_REOPEN_THRESHOLD", "30"))  # re-open after N consecutive failures
+
+# MJPG lets most USB webcams hit 30 FPS; raw YUYV is often capped at ~5 FPS.
+# Must be applied BEFORE width/height (see camera.py). Set to "" to skip,
+# or "YUYV" if your specific camera does not support MJPG.
+USB_FOURCC = os.environ.get("USB_FOURCC", "MJPG")

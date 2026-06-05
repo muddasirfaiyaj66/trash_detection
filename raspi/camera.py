@@ -23,6 +23,7 @@ from config import (
     CAMERA_WARMUP_FRAMES,
     CAMERA_WIDE_FOV,
     STREAM_FPS,
+    USB_FOURCC,
 )
 
 log = logging.getLogger(__name__)
@@ -95,28 +96,51 @@ def _opencv_has_gstreamer() -> bool:
 
 
 def _configure_capture(cap: cv2.VideoCapture) -> None:
-    """Reduce latency and set a stable resolution for USB/V4L2 devices."""
-    # Aggressively drop buffered frames to prevent stale frames
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    """
+    Configure a USB/V4L2 device for high FPS + low latency.
+
+    ORDER MATTERS: FOURCC (MJPG) must be set BEFORE width/height/fps, otherwise
+    V4L2 keeps the slow raw YUYV format and the camera is capped at ~5 FPS.
+    """
+    # 1. Pixel format first — MJPG unlocks 30 FPS on most USB webcams
+    if USB_FOURCC:
+        try:
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*USB_FOURCC))
+        except Exception:
+            pass
+    # 2. Resolution
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
+    # 3. Frame rate
     try:
         cap.set(cv2.CAP_PROP_FPS, STREAM_FPS)
     except Exception:
         pass
-    if CAMERA_WIDE_FOV:
-        try:
-            cap.set(cv2.CAP_PROP_ZOOM, 100)
-        except Exception:
-            pass
-    try:
-        # MJPEG is more efficient than raw frames on USB
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-    except Exception:
-        pass
-    # Reduce autofocus overhead if supported
+    # 4. Tiny buffer so we always read the freshest frame (low latency)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    # Reduce autofocus overhead if supported (ignored by cams without AF)
     try:
         cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
+    except Exception:
+        pass
+    _log_negotiated(cap)
+
+
+def _log_negotiated(cap: cv2.VideoCapture) -> None:
+    """Log what the driver actually negotiated — key for diagnosing low FPS."""
+    try:
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        code = int(cap.get(cv2.CAP_PROP_FOURCC))
+        fourcc = "".join(chr((code >> (8 * i)) & 0xFF) for i in range(4)).strip() if code else "?"
+        log.info("Camera negotiated: %dx%d @ %.0f fps, format=%s", w, h, fps, fourcc or "?")
+        if fourcc and fourcc not in ("MJPG", "H264") and fps and fps <= 10:
+            log.warning(
+                "Camera is in '%s' (raw) mode at %.0f fps. For higher FPS this cam "
+                "may need a lower resolution, or it may not support MJPG.",
+                fourcc, fps,
+            )
     except Exception:
         pass
 
