@@ -10,18 +10,17 @@
     --bg: #0a0c10;
     --surface: #12151c;
     --card: #1a1f2b;
-    --border: rgba(255,255,255,.08);
+    --border: rgba(255,255,255,.09);
     --text: #f1f5f9;
     --muted: #94a3b8;
     --blue: #3b82f6;
     --green: #22c55e;
     --amber: #f59e0b;
     --red: #ef4444;
-    --radius: 14px;
+    --radius: 16px;
     --header-h: 56px;
   }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html { -webkit-text-size-adjust: 100%; }
   body {
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     background: var(--bg);
@@ -31,114 +30,94 @@
   }
 
   .header {
-    position: sticky;
-    top: 0;
-    z-index: 100;
+    position: sticky; top: 0; z-index: 100;
     height: var(--header-h);
-    display: flex;
-    align-items: center;
-    gap: 10px;
+    display: flex; align-items: center; gap: 10px;
     padding: 0 16px;
-    background: rgba(10,12,16,.92);
+    background: rgba(10,12,16,.94);
     backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--border);
   }
   .header h1 {
     font-size: clamp(0.95rem, 3.5vw, 1.15rem);
-    font-weight: 700;
-    flex: 1;
-    min-width: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-weight: 700; flex: 1;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .pill {
-    font-size: 0.7rem;
-    font-weight: 600;
-    padding: 4px 10px;
-    border-radius: 999px;
+    font-size: 0.7rem; font-weight: 600;
+    padding: 4px 10px; border-radius: 999px;
     border: 1px solid var(--border);
-    white-space: nowrap;
   }
   .pill.live { color: var(--green); border-color: rgba(34,197,94,.4); background: rgba(34,197,94,.12); }
   .pill.wait { color: var(--amber); border-color: rgba(245,158,11,.4); background: rgba(245,158,11,.12); }
   .pill.off { color: var(--red); border-color: rgba(239,68,68,.4); background: rgba(239,68,68,.12); }
 
   .layout {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 16px;
-    padding: 16px;
-    max-width: 1400px;
-    margin: 0 auto;
+    display: grid; grid-template-columns: 1fr;
+    gap: 16px; padding: 16px;
+    max-width: 1400px; margin: 0 auto;
   }
-  @media (min-width: 900px) {
-    .layout {
-      grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
-      align-items: start;
-    }
+  @media (min-width: 960px) {
+    .layout { grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); align-items: start; }
   }
 
+  /* ── Video panel ── */
   .video-panel {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     overflow: hidden;
   }
+  .video-panel:fullscreen {
+    border-radius: 0; border: none;
+    display: flex; flex-direction: column;
+    background: #000;
+  }
+  .video-panel:fullscreen .video-wrap { flex: 1; aspect-ratio: unset; }
+  .video-panel:fullscreen .video-toolbar,
+  .video-panel:fullscreen .stream-meta { flex-shrink: 0; }
+
   .video-toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
     padding: 10px 12px;
     border-bottom: 1px solid var(--border);
-    font-size: 0.8rem;
-    color: var(--muted);
+    font-size: 0.78rem; color: var(--muted);
   }
   .video-toolbar strong { color: var(--text); }
+  .toolbar-actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
   .btn {
-    margin-left: auto;
-    font-size: 0.75rem;
-    font-weight: 600;
-    padding: 6px 12px;
-    border-radius: 8px;
+    font-size: 0.75rem; font-weight: 600;
+    padding: 7px 12px; border-radius: 8px;
     border: 1px solid var(--border);
-    background: var(--card);
-    color: var(--text);
-    cursor: pointer;
+    background: var(--card); color: var(--text);
+    cursor: pointer; transition: background .15s;
   }
-  .btn:active { transform: scale(0.98); }
+  .btn:hover { background: #252b3a; }
+  .btn.primary { background: rgba(59,130,246,.2); border-color: rgba(59,130,246,.45); color: #93c5fd; }
 
   .video-wrap {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 4 / 3;
+    position: relative; width: 100%;
+    aspect-ratio: 16 / 9;
     background: #000;
   }
   .video-wrap img {
-    width: 100%;
-    height: 100%;
+    width: 100%; height: 100%;
     object-fit: contain;
     display: block;
-    background: #0f1419;
+    background: #080a0e;
   }
+  .video-wrap.fit-cover img { object-fit: cover; }
+
   .video-overlay {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    padding: 24px;
-    text-align: center;
-    background: rgba(10,12,16,.85);
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 10px;
+    padding: 24px; text-align: center;
+    background: rgba(10,12,16,.88);
     pointer-events: none;
     transition: opacity .25s;
   }
   .video-overlay.hidden { opacity: 0; visibility: hidden; }
-  .video-overlay h2 { font-size: 1rem; font-weight: 600; }
-  .video-overlay p { font-size: 0.85rem; color: var(--muted); max-width: 320px; }
   .spinner {
     width: 36px; height: 36px;
     border: 3px solid var(--border);
@@ -149,16 +128,14 @@
   @keyframes spin { to { transform: rotate(360deg); } }
 
   .stream-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
+    display: flex; flex-wrap: wrap; gap: 14px;
     padding: 10px 12px;
-    font-size: 0.75rem;
-    color: var(--muted);
+    font-size: 0.72rem; color: var(--muted);
     border-top: 1px solid var(--border);
   }
-  .stream-meta span b { color: var(--text); font-weight: 600; }
+  .stream-meta b { color: var(--text); }
 
+  /* ── Sidebar ── */
   .sidebar { display: flex; flex-direction: column; gap: 16px; }
   .card {
     background: var(--card);
@@ -167,93 +144,168 @@
     padding: 16px;
   }
   .card-h {
-    font-size: 0.68rem;
-    font-weight: 700;
-    letter-spacing: .06em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 14px;
+    font-size: 0.68rem; font-weight: 700;
+    letter-spacing: .07em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 16px;
   }
 
-  .bins { display: flex; flex-direction: column; gap: 20px; }
-  @media (min-width: 500px) and (max-width: 899px) {
-    .bins { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .bins-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  @media (min-width: 520px) {
+    .bins-grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (min-width: 960px) {
+    .bins-grid { grid-template-columns: 1fr; }
   }
 
   .bin-card {
     padding: 14px;
-    border-radius: 12px;
-    background: rgba(0,0,0,.25);
+    border-radius: 14px;
+    background: linear-gradient(160deg, rgba(255,255,255,.04), rgba(0,0,0,.2));
     border: 1px solid var(--border);
   }
   .bin-head {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 10px;
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px;
   }
-  .bin-icon { font-size: 1.5rem; line-height: 1; }
-  .bin-title { font-weight: 600; font-size: 0.95rem; }
-  .bin-lid { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
-  .bin-lid.open { color: var(--green); }
+  .bin-head-left { display: flex; align-items: center; gap: 10px; }
+  .bin-icon { font-size: 1.4rem; }
+  .bin-title { font-weight: 700; font-size: 0.95rem; }
+  .bin-lid {
+    font-size: 0.72rem; font-weight: 600;
+    padding: 3px 8px; border-radius: 6px;
+    background: rgba(255,255,255,.06); color: var(--muted);
+  }
+  .bin-lid.open { background: rgba(34,197,94,.15); color: var(--green); }
 
-  .bar-track {
-    height: 10px;
-    border-radius: 999px;
-    background: rgba(255,255,255,.08);
+  /* ── Tank fill gauge ── */
+  .tank-wrap {
+    display: flex; align-items: flex-end; justify-content: center;
+    gap: 12px; margin-bottom: 12px;
+  }
+  .tank {
+    position: relative;
+    width: 72px; height: 130px;
+    flex-shrink: 0;
+  }
+  .tank-cap {
+    width: 36px; height: 10px;
+    margin: 0 auto 2px;
+    background: linear-gradient(180deg, #64748b, #475569);
+    border-radius: 4px 4px 0 0;
+    transition: transform .3s;
+  }
+  .tank.lid-open .tank-cap { transform: rotate(-28deg) translateX(-6px); transform-origin: bottom right; }
+  .tank-body {
+    position: relative;
+    width: 100%; height: 118px;
+    border: 3px solid rgba(148,163,184,.35);
+    border-radius: 8px 8px 14px 14px;
+    background: linear-gradient(90deg, rgba(0,0,0,.5), rgba(255,255,255,.03), rgba(0,0,0,.4));
     overflow: hidden;
-    margin-top: 8px;
+    box-shadow: inset 0 0 20px rgba(0,0,0,.5);
   }
-  .bar-fill {
-    height: 100%;
-    border-radius: 999px;
-    transition: width .4s ease;
+  .tank-body::before {
+    content: '';
+    position: absolute; top: 8px; left: 6px;
+    width: 8px; height: 70%;
+    background: linear-gradient(180deg, rgba(255,255,255,.12), transparent);
+    border-radius: 4px; z-index: 2; pointer-events: none;
   }
-  .bar-pct {
-    font-size: 0.8rem;
-    font-weight: 700;
-    text-align: right;
-    margin-top: 6px;
+  .tank-liquid {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    height: 0%;
+    transition: height .8s cubic-bezier(.4, 0, .2, 1);
+    overflow: hidden;
+  }
+  .tank-liquid-inner {
+    position: absolute; inset: 0;
+    opacity: .92;
+  }
+  .tank-wave {
+    position: absolute; top: -8px; left: -50%;
+    width: 200%; height: 16px;
+    background: rgba(255,255,255,.25);
+    border-radius: 45%;
+    animation: wave 3s linear infinite;
+  }
+  .tank-wave.w2 { animation-duration: 4s; animation-delay: -1.5s; opacity: .5; top: -6px; }
+  @keyframes wave {
+    0% { transform: translateX(0) rotate(0deg); }
+    100% { transform: translateX(25%) rotate(360deg); }
+  }
+  .tank-bubbles {
+    position: absolute; inset: 0; pointer-events: none;
+  }
+  .tank-bubbles span {
+    position: absolute; bottom: 10%;
+    width: 4px; height: 4px; border-radius: 50%;
+    background: rgba(255,255,255,.35);
+    animation: bubble 2.5s ease-in infinite;
+  }
+  .tank-bubbles span:nth-child(1) { left: 20%; animation-delay: 0s; }
+  .tank-bubbles span:nth-child(2) { left: 55%; animation-delay: .8s; width: 3px; height: 3px; }
+  .tank-bubbles span:nth-child(3) { left: 75%; animation-delay: 1.4s; }
+  @keyframes bubble {
+    0% { transform: translateY(0); opacity: 0; }
+    20% { opacity: .8; }
+    100% { transform: translateY(-80px); opacity: 0; }
   }
 
-  .sliders { margin-top: 14px; display: flex; flex-direction: column; gap: 14px; }
+  .tank-stats { flex: 1; min-width: 0; }
+  .tank-pct {
+    font-size: 1.75rem; font-weight: 800;
+    line-height: 1; letter-spacing: -.02em;
+  }
+  .tank-status {
+    display: inline-block;
+    margin-top: 6px;
+    font-size: 0.72rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .05em;
+    padding: 4px 10px; border-radius: 999px;
+  }
+  .tank-status.empty { background: rgba(148,163,184,.15); color: var(--muted); }
+  .tank-status.low { background: rgba(34,197,94,.15); color: var(--green); }
+  .tank-status.medium { background: rgba(59,130,246,.15); color: var(--blue); }
+  .tank-status.high { background: rgba(245,158,11,.15); color: var(--amber); }
+  .tank-status.full { background: rgba(239,68,68,.2); color: var(--red); animation: pulse-full 1.5s ease infinite; }
+  @keyframes pulse-full {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,.3); }
+    50% { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
+  }
+  .tank-scale {
+    margin-top: 10px;
+    display: flex; flex-direction: column; gap: 3px;
+    font-size: 0.62rem; color: var(--muted);
+  }
+  .tank-scale span { display: flex; justify-content: space-between; }
+
+  .sliders { margin-top: 12px; display: flex; flex-direction: column; gap: 12px; }
   .slider-row label {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: var(--muted);
-    margin-bottom: 6px;
+    display: flex; justify-content: space-between;
+    font-size: 0.75rem; font-weight: 600; color: var(--muted); margin-bottom: 4px;
   }
-  .slider-row label span { color: var(--text); font-size: 0.9rem; }
-  input[type="range"] {
-    width: 100%;
-    height: 28px;
-    accent-color: var(--blue);
-    cursor: pointer;
-  }
+  .slider-row label span { color: var(--text); }
+  input[type="range"] { width: 100%; height: 28px; accent-color: var(--blue); cursor: pointer; }
 
   .log {
-    font-family: ui-monospace, "Cascadia Code", monospace;
-    font-size: 0.72rem;
-    line-height: 1.45;
-    max-height: 200px;
-    overflow-y: auto;
-    padding: 10px;
+    font-family: ui-monospace, monospace;
+    font-size: 0.7rem; max-height: 180px;
+    overflow-y: auto; padding: 10px;
     background: rgba(0,0,0,.35);
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    display: flex;
-    flex-direction: column-reverse;
-    gap: 4px;
+    border-radius: 10px; border: 1px solid var(--border);
+    display: flex; flex-direction: column-reverse; gap: 4px;
   }
   .log .open { color: var(--green); }
   .log .close { color: var(--amber); }
   .log .level { color: var(--blue); }
 
-  .legend { display: flex; flex-direction: column; gap: 10px; font-size: 0.85rem; }
-  .legend-item { display: flex; align-items: center; gap: 10px; }
-  .swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+  .legend { display: flex; flex-direction: column; gap: 8px; font-size: 0.82rem; }
+  .legend-item { display: flex; align-items: center; gap: 8px; }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; }
 </style>
 </head>
 <body>
@@ -265,69 +317,117 @@
 </header>
 
 <main class="layout">
-  <section class="video-panel">
+  <section class="video-panel" id="video-panel">
     <div class="video-toolbar">
       <span>Camera: <strong id="cam-type">—</strong></span>
       <span id="stream-mode">MJPEG</span>
-      <button type="button" class="btn" id="btn-reload" onclick="reloadStream()">Reload stream</button>
+      <div class="toolbar-actions">
+        <button type="button" class="btn" id="btn-fit" onclick="toggleFit()">Fit view</button>
+        <button type="button" class="btn" onclick="reloadStream()">Reload</button>
+        <button type="button" class="btn primary" id="btn-fs" onclick="toggleFullscreen()">⛶ Fullscreen</button>
+      </div>
     </div>
-    <div class="video-wrap">
-      <img id="feed" alt="Live detection feed" crossorigin="anonymous">
+    <div class="video-wrap" id="video-wrap">
+      <img id="feed" alt="Live detection feed">
       <div id="overlay" class="video-overlay">
         <div class="spinner"></div>
         <h2 id="overlay-title">Waiting for camera</h2>
-        <p id="overlay-msg">Start detect.py on the Pi. Stream appears when frames are received.</p>
+        <p id="overlay-msg">Start detect.py on the Pi.</p>
       </div>
     </div>
     <div class="stream-meta">
-      <span>Stream FPS: <b id="meta-fps">0 / 30</b></span>
+      <span>Stream: <b id="meta-fps">0 / 30</b> FPS</span>
       <span>Frames: <b id="meta-frames">0</b></span>
-      <span>Last frame: <b id="meta-age">—</b></span>
+      <span>Updated: <b id="meta-age">—</b></span>
     </div>
   </section>
 
   <aside class="sidebar">
     <div class="card">
-      <div class="card-h">Dustbins</div>
-      <div class="bins">
-        <div class="bin-card" data-bin="paper">
+      <div class="card-h">Dustbin fill level</div>
+      <div class="bins-grid">
+        <!-- Paper -->
+        <div class="bin-card" id="bin-paper">
           <div class="bin-head">
-            <span class="bin-icon">📄</span>
-            <div>
-              <div class="bin-title">Paper</div>
-              <div class="bin-lid" id="paper-lid">Lid closed</div>
+            <div class="bin-head-left">
+              <span class="bin-icon">📄</span>
+              <span class="bin-title">Paper</span>
+            </div>
+            <span class="bin-lid" id="paper-lid">Closed</span>
+          </div>
+          <div class="tank-wrap">
+            <div class="tank" id="paper-tank">
+              <div class="tank-cap"></div>
+              <div class="tank-body">
+                <div class="tank-liquid" id="paper-liquid" style="height:0%">
+                  <div class="tank-liquid-inner" id="paper-liquid-color" style="background:linear-gradient(180deg,#60a5fa,#2563eb)">
+                    <div class="tank-wave"></div>
+                    <div class="tank-wave w2"></div>
+                    <div class="tank-bubbles"><span></span><span></span><span></span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="tank-stats">
+              <div class="tank-pct" id="paper-level">0%</div>
+              <span class="tank-status empty" id="paper-status">Empty</span>
+              <div class="tank-scale">
+                <span><em>Full</em><em>100%</em></span>
+                <span><em>Half</em><em>50%</em></span>
+                <span><em>Empty</em><em>0%</em></span>
+              </div>
             </div>
           </div>
-          <div class="bar-track"><div class="bar-fill" id="paper-bar" style="width:0%;background:var(--blue)"></div></div>
-          <div class="bar-pct" id="paper-level">0%</div>
           <div class="sliders">
             <div class="slider-row">
-              <label>Open <span><span id="paper-open-val">90</span>°</span></label>
+              <label>Open lid <span><span id="paper-open-val">90</span>°</span></label>
               <input type="range" id="paper-open-input" min="0" max="180" value="90">
             </div>
             <div class="slider-row">
-              <label>Close <span><span id="paper-close-val">0</span>°</span></label>
+              <label>Close lid <span><span id="paper-close-val">0</span>°</span></label>
               <input type="range" id="paper-close-input" min="0" max="180" value="0">
             </div>
           </div>
         </div>
-        <div class="bin-card" data-bin="plastic">
+        <!-- Plastic -->
+        <div class="bin-card" id="bin-plastic">
           <div class="bin-head">
-            <span class="bin-icon">🧴</span>
-            <div>
-              <div class="bin-title">Plastic</div>
-              <div class="bin-lid" id="plastic-lid">Lid closed</div>
+            <div class="bin-head-left">
+              <span class="bin-icon">🧴</span>
+              <span class="bin-title">Plastic</span>
+            </div>
+            <span class="bin-lid" id="plastic-lid">Closed</span>
+          </div>
+          <div class="tank-wrap">
+            <div class="tank" id="plastic-tank">
+              <div class="tank-cap"></div>
+              <div class="tank-body">
+                <div class="tank-liquid" id="plastic-liquid" style="height:0%">
+                  <div class="tank-liquid-inner" id="plastic-liquid-color" style="background:linear-gradient(180deg,#4ade80,#16a34a)">
+                    <div class="tank-wave"></div>
+                    <div class="tank-wave w2"></div>
+                    <div class="tank-bubbles"><span></span><span></span><span></span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="tank-stats">
+              <div class="tank-pct" id="plastic-level">0%</div>
+              <span class="tank-status empty" id="plastic-status">Empty</span>
+              <div class="tank-scale">
+                <span><em>Full</em><em>100%</em></span>
+                <span><em>Half</em><em>50%</em></span>
+                <span><em>Empty</em><em>0%</em></span>
+              </div>
             </div>
           </div>
-          <div class="bar-track"><div class="bar-fill" id="plastic-bar" style="width:0%;background:var(--green)"></div></div>
-          <div class="bar-pct" id="plastic-level">0%</div>
           <div class="sliders">
             <div class="slider-row">
-              <label>Open <span><span id="plastic-open-val">90</span>°</span></label>
+              <label>Open lid <span><span id="plastic-open-val">90</span>°</span></label>
               <input type="range" id="plastic-open-input" min="0" max="180" value="90">
             </div>
             <div class="slider-row">
-              <label>Close <span><span id="plastic-close-val">0</span>°</span></label>
+              <label>Close lid <span><span id="plastic-close-val">0</span>°</span></label>
               <input type="range" id="plastic-close-input" min="0" max="180" value="0">
             </div>
           </div>
@@ -337,16 +437,14 @@
 
     <div class="card">
       <div class="card-h">Event log</div>
-      <div class="log" id="log-box">
-        <div>System ready</div>
-      </div>
+      <div class="log" id="log-box"><div>System ready</div></div>
     </div>
 
     <div class="card">
-      <div class="card-h">Detection classes</div>
+      <div class="card-h">Detection</div>
       <div class="legend">
-        <div class="legend-item"><span class="swatch" style="background:var(--blue)"></span>Class 2 Paper → paper lid</div>
-        <div class="legend-item"><span class="swatch" style="background:var(--green)"></span>Class 3 Plastic → plastic lid</div>
+        <div class="legend-item"><span class="swatch" style="background:var(--blue)"></span>Paper → paper bin</div>
+        <div class="legend-item"><span class="swatch" style="background:var(--green)"></span>Plastic → plastic bin</div>
       </div>
     </div>
   </aside>
@@ -354,62 +452,67 @@
 
 <script>
 const feed = document.getElementById('feed');
+const videoWrap = document.getElementById('video-wrap');
+const videoPanel = document.getElementById('video-panel');
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayMsg = document.getElementById('overlay-msg');
 const streamPill = document.getElementById('stream-pill');
 const logBox = document.getElementById('log-box');
+const btnFs = document.getElementById('btn-fs');
+const btnFit = document.getElementById('btn-fit');
 let prevState = { paper: {}, plastic: {} };
-let streamOk = false;
+let fitContain = true;
 
 function reloadStream() {
   feed.src = '/video_feed?ts=' + Date.now();
-  addLog('Stream reload requested');
+  addLog('Stream reloaded');
 }
-
-function setStreamPill(state) {
-  streamPill.className = 'pill ' + state;
-  const labels = { live: 'Live', wait: 'Connecting', off: 'Offline' };
-  streamPill.textContent = labels[state] || state;
+function toggleFit() {
+  fitContain = !fitContain;
+  videoWrap.classList.toggle('fit-cover', !fitContain);
+  btnFit.textContent = fitContain ? 'Fit view' : 'Fill view';
 }
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    (videoPanel.requestFullscreen || videoPanel.webkitRequestFullscreen)?.call(videoPanel);
+  } else {
+    document.exitFullscreen();
+  }
+}
+document.addEventListener('fullscreenchange', () => {
+  btnFs.textContent = document.fullscreenElement ? '✕ Exit' : '⛶ Fullscreen';
+});
 
+function setStreamPill(s) {
+  streamPill.className = 'pill ' + s;
+  streamPill.textContent = { live: 'Live', wait: 'Connecting', off: 'Offline' }[s] || s;
+}
 function updateOverlay(stream) {
   const age = stream.last_frame_age_sec;
   const active = stream.active && age !== null && age < 4;
-  if (active) {
-    overlay.classList.add('hidden');
-    setStreamPill('live');
-    streamOk = true;
-    return;
-  }
+  if (active) { overlay.classList.add('hidden'); setStreamPill('live'); return; }
   overlay.classList.remove('hidden');
   if (stream.error) {
     setStreamPill('off');
     overlayTitle.textContent = 'Camera offline';
     overlayMsg.textContent = stream.error;
-  } else if (age !== null && age >= 4) {
-    setStreamPill('wait');
-    overlayTitle.textContent = 'Stream stalled';
-    overlayMsg.textContent = 'No new frames for ' + Math.round(age) + 's. Check detect.py on the Pi.';
   } else {
     setStreamPill('wait');
-    overlayTitle.textContent = 'Waiting for camera';
-    overlayMsg.textContent = 'Run detect.py on the Pi. Set CAMERA_TYPE to usb or pi in config.py.';
+    overlayTitle.textContent = 'Waiting for stream';
+    overlayMsg.textContent = 'Run detect.py on the Pi.';
   }
 }
 
-feed.onload = () => {
-  if (feed.naturalWidth > 0) overlay.classList.add('hidden');
-};
+feed.onload = () => { if (feed.naturalWidth > 0) overlay.classList.add('hidden'); };
 feed.onerror = () => {
   overlay.classList.remove('hidden');
   setStreamPill('off');
-  overlayTitle.textContent = 'Cannot load stream';
-  overlayMsg.textContent = 'Open /video_feed in a new tab or restart detect.py.';
+  overlayTitle.textContent = 'Stream error';
+  overlayMsg.textContent = 'Click Reload or restart detect.py.';
 };
 
 reloadStream();
-setInterval(reloadStream, 60000);
 
 function addLog(msg, type) {
   const el = document.createElement('div');
@@ -419,32 +522,47 @@ function addLog(msg, type) {
   while (logBox.children.length > 50) logBox.removeChild(logBox.lastChild);
 }
 
-function levelColor(pct) {
-  if (pct >= 90) return 'var(--red)';
-  if (pct >= 60) return 'var(--amber)';
-  return pct > 30 ? 'var(--blue)' : 'var(--green)';
+function fillStatus(pct) {
+  if (pct >= 90) return { label: 'Full', cls: 'full' };
+  if (pct >= 70) return { label: 'High', cls: 'high' };
+  if (pct >= 40) return { label: 'Medium', cls: 'medium' };
+  if (pct >= 10) return { label: 'Low', cls: 'low' };
+  return { label: 'Empty', cls: 'empty' };
+}
+
+function liquidGradient(pct) {
+  if (pct >= 90) return 'linear-gradient(180deg,#f87171,#dc2626)';
+  if (pct >= 60) return 'linear-gradient(180deg,#fbbf24,#d97706)';
+  if (pct >= 30) return 'linear-gradient(180deg,#60a5fa,#2563eb)';
+  return 'linear-gradient(180deg,#4ade80,#16a34a)';
 }
 
 function updateBins(data) {
   ['paper','plastic'].forEach(bin => {
     const s = data[bin];
-    const lid = document.getElementById(bin + '-lid');
-    const bar = document.getElementById(bin + '-bar');
-    const lvl = document.getElementById(bin + '-level');
+    const pct = s.level_pct ?? 0;
     const isOpen = s.lid === 'open';
-    lid.textContent = isOpen ? 'Lid open' : 'Lid closed';
-    lid.className = 'bin-lid' + (isOpen ? ' open' : '');
+
+    document.getElementById(bin + '-lid').textContent = isOpen ? 'Open' : 'Closed';
+    document.getElementById(bin + '-lid').className = 'bin-lid' + (isOpen ? ' open' : '');
+    document.getElementById(bin + '-tank').classList.toggle('lid-open', isOpen);
+
+    document.getElementById(bin + '-liquid').style.height = pct + '%';
+    document.getElementById(bin + '-level').textContent = pct + '%';
+    document.getElementById(bin + '-liquid-color').style.background = liquidGradient(pct);
+
+    const st = fillStatus(pct);
+    const statusEl = document.getElementById(bin + '-status');
+    statusEl.textContent = st.label;
+    statusEl.className = 'tank-status ' + st.cls;
+
     if (prevState[bin].lid !== undefined && prevState[bin].lid !== s.lid) {
       addLog(bin + ' lid ' + (isOpen ? 'opened' : 'closed'), isOpen ? 'open' : 'close');
     }
     if (prevState[bin].level_pct !== s.level_pct) {
-      addLog(bin + ' fill ' + s.level_pct + '%', 'level');
+      addLog(bin + ' level → ' + pct + '% (' + st.label + ')', 'level');
     }
-    const pct = s.level_pct ?? 0;
-    bar.style.width = pct + '%';
-    bar.style.background = levelColor(pct);
-    lvl.textContent = pct + '%';
-    lvl.style.color = levelColor(pct);
+
     const oIn = document.getElementById(bin + '-open-input');
     const cIn = document.getElementById(bin + '-close-input');
     if (document.activeElement !== oIn && s.open_deg !== undefined) {
@@ -474,15 +592,11 @@ async function poll() {
       document.getElementById('meta-frames').textContent = data.stream.frame_count || 0;
       const age = data.stream.last_frame_age_sec;
       document.getElementById('meta-age').textContent =
-        age === null ? '—' : (age < 1 ? 'just now' : age.toFixed(1) + 's ago');
-      document.getElementById('stream-mode').textContent =
-        data.stream.websocket ? 'MJPEG + WS available' : 'MJPEG';
+        age === null ? '—' : (age < 1 ? 'now' : age.toFixed(1) + 's');
       updateOverlay(data.stream);
     }
     updateBins(data);
-  } catch (e) {
-    setStreamPill('off');
-  }
+  } catch { setStreamPill('off'); }
 }
 
 async function sendAngle(bin) {
@@ -497,9 +611,7 @@ async function sendAngle(bin) {
       body: JSON.stringify({ bin, open_deg: openVal, close_deg: closeVal })
     });
     addLog(r.ok ? bin + ' angles saved' : bin + ' config failed', r.ok ? 'level' : 'close');
-  } catch {
-    addLog('Config request failed', 'close');
-  }
+  } catch { addLog('Config failed', 'close'); }
 }
 
 ['paper','plastic'].forEach(bin => {

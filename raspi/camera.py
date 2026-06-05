@@ -19,6 +19,7 @@ from config import (
     CAMERA_WIDTH,
     CAMERA_HEIGHT,
     CAMERA_WARMUP_FRAMES,
+    CAMERA_WIDE_FOV,
     STREAM_FPS,
 )
 
@@ -60,6 +61,11 @@ def _configure_capture(cap: cv2.VideoCapture) -> None:
         cap.set(cv2.CAP_PROP_FPS, STREAM_FPS)
     except Exception:
         pass
+    if CAMERA_WIDE_FOV:
+        try:
+            cap.set(cv2.CAP_PROP_ZOOM, 100)
+        except Exception:
+            pass
     try:
         cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     except Exception:
@@ -103,8 +109,21 @@ class Picamera2Capture:
         )
         self._picam.configure(cfg)
         self._picam.start()
+        if CAMERA_WIDE_FOV:
+            self._apply_wide_fov()
         time.sleep(1.0)
         self._opened = True
+
+    def _apply_wide_fov(self):
+        """Use the widest sensor crop so the stream is not overly zoomed."""
+        try:
+            props = self._picam.camera_properties
+            crop = props.get("ScalerCropMaximum")
+            if crop:
+                self._picam.set_controls({"ScalerCrop": crop})
+                log.info("Pi camera wide FOV enabled (ScalerCropMaximum)")
+        except Exception as e:
+            log.debug("Wide FOV not applied: %s", e)
 
     def isOpened(self) -> bool:
         return self._opened
