@@ -13,9 +13,9 @@ from ultralytics import YOLO
 from config import (
     CONFIDENCE, LINE_WIDTH, DETECT_CLASSES, CLASS_NAMES,
     MJPEG_QUALITY, STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ,
-    CAMERA_SOURCE, CAMERA_REOPEN_THRESHOLD, MODEL_WARMUP, MODEL_WARMUP_TIMEOUT,
+    CAMERA_REOPEN_THRESHOLD, MODEL_WARMUP, MODEL_WARMUP_TIMEOUT,
 )
-from camera import initialize_camera
+from camera import initialize_camera, consume_switch_request, get_camera_mode
 from dustbin_api import on_detection
 from streamer import push_frame, set_camera_status
 
@@ -161,11 +161,20 @@ class CaptureStreamThread(threading.Thread):
 
     def run(self):
         log.info("Capture stream started (target %d FPS, recovery at %d failures)", STREAM_FPS, CAMERA_REOPEN_THRESHOLD)
+        # Open the camera from inside the thread so the dashboard stays live and
+        # mode-switching works even if no camera is connected yet.
+        open_camera_with_retry(self.holder, self.stop)
         interval = 1.0 / max(STREAM_FPS, 1)
         last_frame_time = time.time()
         
         while not self.stop.is_set():
             t0 = time.perf_counter()
+
+            # Apply a dashboard-requested camera switch (usb ↔ pi)
+            if consume_switch_request():
+                self._apply_switch()
+                continue
+
             ret, frame = self.holder.read()
             if not ret or frame is None or frame.size == 0:
                 self._handle_read_fail()
@@ -186,6 +195,21 @@ class CaptureStreamThread(threading.Thread):
             if wait > 0:
                 time.sleep(wait)
 
+    def _apply_switch(self):
+        mode = get_camera_mode()
+        log.info("Switching camera → %s (usb_index=%s)", mode["type"], mode["usb_index"])
+        set_camera_status(False, f"Switching to {mode['type'].upper()} camera…")
+        new_cap = initialize_camera()
+        if new_cap is not None:
+            self.holder.replace(new_cap)
+            self.fail_streak = 0
+            set_camera_status(True, None)
+            log.info("Camera switched to %s", mode["type"])
+        else:
+            self.holder.release()
+            set_camera_status(False, f"{mode['type'].upper()} camera not found — check connection")
+            log.error("Camera switch to %s failed", mode["type"])
+
     def _handle_read_fail(self):
         self.fail_streak += 1
         if self.fail_streak == 1:
@@ -196,7 +220,7 @@ class CaptureStreamThread(threading.Thread):
         if self.fail_streak >= CAMERA_REOPEN_THRESHOLD:
             set_camera_status(False, f"Camera stalled ({self.fail_streak} frames) — reconnecting…")
             log.error("Reopening camera after %d consecutive failures", self.fail_streak)
-            new_cap = initialize_camera(CAMERA_SOURCE)
+            new_cap = initialize_camera()
             if new_cap is not None:
                 self.holder.replace(new_cap)
                 self.fail_streak = 0
@@ -257,21 +281,34 @@ class InferenceThread(threading.Thread):
             self._inf_ts = now
 
 
-def open_camera_with_retry(holder: CameraHolder) -> bool:
-    while True:
-        cap = initialize_camera(CAMERA_SOURCE)
+def open_camera_with_retry(holder: CameraHolder, stop: threading.Event) -> bool:
+    """Open the camera, retrying — but keep checking for switch requests so the
+    dashboard can change the mode even while the current camera is missing."""
+    while not stop.is_set():
+        consume_switch_request()  # clear any pending flag; we read live mode below
+        cap = initialize_camera()
         if cap is not None:
             holder.set(cap)
             set_camera_status(True, None)
             return True
-        set_camera_status(False, "Cannot open camera — retrying…")
-        log.error("Camera open failed — retry in 3s")
-        time.sleep(3)
+        mode = get_camera_mode()["type"]
+        set_camera_status(False, f"{mode.upper()} camera not found — retrying (you can switch mode)")
+        log.error("Camera open failed (mode=%s) — retry in 3s", mode)
+        # Wait up to 3s but break early if a switch is requested
+        for _ in range(30):
+            if stop.is_set() or _switch_pending():
+                break
+            time.sleep(0.1)
+    return False
+
+
+def _switch_pending() -> bool:
+    from camera import _switch_event
+    return _switch_event.is_set()
 
 
 def start_pipeline(model: YOLO, stop: threading.Event) -> tuple[CameraHolder, CaptureStreamThread, InferenceThread]:
     holder = CameraHolder()
-    open_camera_with_retry(holder)
     hub = FrameHub()
     capture = CaptureStreamThread(holder, hub, stop)
     capture.start()

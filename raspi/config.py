@@ -28,9 +28,11 @@ CAMERA_TYPE = os.environ.get("CAMERA_TYPE", "usb")   # "usb" | "pi" | "auto"
 # USB webcam (/dev/video0, /dev/video1, … — run: v4l2-ctl --list-devices)
 USB_CAMERA_INDEX = int(os.environ.get("USB_CAMERA_INDEX", "0"))
 
-# Resolution — 16:9 gives a wider field of view than 4:3 on Pi Camera
-CAMERA_WIDTH   = int(os.environ.get("CAMERA_WIDTH", "1280"))
-CAMERA_HEIGHT  = int(os.environ.get("CAMERA_HEIGHT", "720"))
+# Resolution — lower = much higher FPS on the Pi. Wide FOV comes from the sensor
+# crop (CAMERA_WIDE_FOV) NOT the resolution, so 640x480 stays wide AND fast.
+#   640x480  → fast (recommended on Pi)        1280x720 → smoother image, lower FPS
+CAMERA_WIDTH   = int(os.environ.get("CAMERA_WIDTH", "640"))
+CAMERA_HEIGHT  = int(os.environ.get("CAMERA_HEIGHT", "480"))
 CAMERA_WARMUP_FRAMES = 15
 # Pi Camera: use full sensor crop (widest view, less “zoomed in”)
 CAMERA_WIDE_FOV = os.environ.get("CAMERA_WIDE_FOV", "true").lower() in ("1", "true", "yes")

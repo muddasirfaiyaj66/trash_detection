@@ -7,6 +7,7 @@ import sys
 import site
 import time
 import logging
+import threading
 import subprocess
 from glob import glob
 from shutil import which
@@ -25,6 +26,46 @@ from config import (
 )
 
 log = logging.getLogger(__name__)
+
+# ── Runtime camera mode (switchable live from the dashboard) ──────────────────
+_mode_lock = threading.Lock()
+_runtime_mode = {"type": (CAMERA_TYPE or "usb").lower(), "usb_index": USB_CAMERA_INDEX}
+_switch_event = threading.Event()
+
+
+def set_camera_mode(cam_type: str, usb_index=None) -> dict:
+    """Request a live switch to 'usb', 'pi', or 'auto'. Capture thread applies it."""
+    cam_type = (cam_type or "").lower()
+    if cam_type not in ("usb", "pi", "auto"):
+        raise ValueError("camera type must be 'usb', 'pi', or 'auto'")
+    with _mode_lock:
+        _runtime_mode["type"] = cam_type
+        if usb_index is not None:
+            _runtime_mode["usb_index"] = int(usb_index)
+        snapshot = dict(_runtime_mode)
+    _switch_event.set()
+    log.info("Camera switch requested → %s (usb_index=%s)", cam_type, snapshot["usb_index"])
+    return snapshot
+
+
+def get_camera_mode() -> dict:
+    with _mode_lock:
+        return dict(_runtime_mode)
+
+
+def consume_switch_request() -> bool:
+    """True (once) if a switch was requested; clears the flag."""
+    if _switch_event.is_set():
+        _switch_event.clear()
+        return True
+    return False
+
+
+def _resolve_source():
+    mode = get_camera_mode()
+    if mode["type"] == "pi":
+        return "libcamera"
+    return mode["usb_index"]
 
 # Raspberry Pi OS installs picamera2 here; venvs often cannot see it otherwise.
 _PI_SITE_PATHS = (
@@ -83,21 +124,9 @@ def _configure_capture(cap: cv2.VideoCapture) -> None:
 def _verify_capture(cap, label: str, warmup: int = CAMERA_WARMUP_FRAMES) -> bool:
     """
     OpenCV often reports isOpened()=True before the device delivers frames.
-    Discard warmup frames and require at least one valid buffer.
-    Parallel frame reading for faster warmup.
+    Discard warmup frames and require at least one valid buffer before trusting it.
     """
     _configure_capture(cap)
-    
-    # Try parallel warmup first (read frames without delay between reads)
-    if CAMERA_WARMUP_PARALLEL:
-        for i in range(warmup):
-            ret, frame = cap.read()
-            if ret and frame is not None and getattr(frame, "size", 0) > 0:
-                log.info("Camera verified (%s) after %d frame(s) — parallel warmup", label, i + 1)
-                return True
-        return False
-    
-    # Fallback: staggered warmup with delays
     for i in range(warmup):
         ret, frame = cap.read()
         if ret and frame is not None and getattr(frame, "size", 0) > 0:
@@ -462,11 +491,14 @@ def _open_usb_camera(idx: int = USB_CAMERA_INDEX) -> cv2.VideoCapture | None:
     return None
 
 
-def initialize_camera(source=CAMERA_SOURCE):
+def initialize_camera(source=None):
     """
     Open a camera and confirm frames are readable.
-    Controlled by config.CAMERA_TYPE: usb | pi | auto.
+    Honours the live runtime mode (usb | pi | auto) set from the dashboard.
     """
+    if source is None:
+        source = _resolve_source()
+
     if isinstance(source, str) and not str(source).isdigit():
         if str(source).lower() in ("libcamera", "picamera2", "pi"):
             return _open_pi_camera()
@@ -478,17 +510,18 @@ def initialize_camera(source=CAMERA_SOURCE):
             cap.release()
         return None
 
-    mode = (CAMERA_TYPE or "auto").lower()
-    log.info("Camera mode: %s (stream %dx%d)", mode, CAMERA_WIDTH, CAMERA_HEIGHT)
+    mode = get_camera_mode()["type"]
+    usb_index = int(source) if str(source).isdigit() else get_camera_mode()["usb_index"]
+    log.info("Camera mode: %s (stream %dx%d, usb_index=%d)", mode, CAMERA_WIDTH, CAMERA_HEIGHT, usb_index)
 
     if mode == "pi":
         return _open_pi_camera()
 
     if mode == "usb":
-        idx = int(source) if str(source).isdigit() else USB_CAMERA_INDEX
-        return _open_usb_camera(idx)
+        return _open_usb_camera(usb_index)
 
-    cap = _open_usb_camera(USB_CAMERA_INDEX)
+    # auto: USB first, then Pi cam
+    cap = _open_usb_camera(usb_index)
     if cap is not None:
         return cap
     log.info("No USB camera – trying Pi Camera Module…")
@@ -503,4 +536,4 @@ def reopen_camera(cap):
     except Exception:
         pass
     time.sleep(0.5)
-    return initialize_camera(CAMERA_SOURCE)
+    return initialize_camera()

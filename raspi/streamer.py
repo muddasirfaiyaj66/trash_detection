@@ -187,19 +187,37 @@ if WEBSOCKET_AVAILABLE:
 
 @app.route("/status")
 def status():
+    import camera
+    cam_mode = camera.get_camera_mode()
     with _lock:
         data = {
             "paper":   dict(dustbin_state["paper"]),
             "plastic": dict(dustbin_state["plastic"]),
             "camera": {
-                "type": CAMERA_TYPE,
-                "usb_index": USB_CAMERA_INDEX,
+                "type": cam_mode["type"],
+                "usb_index": cam_mode["usb_index"],
                 "width": CAMERA_WIDTH,
                 "height": CAMERA_HEIGHT,
             },
             "stream": _stream_status(),
         }
     return jsonify(data)
+
+
+@app.route("/camera/switch", methods=["POST"])
+def camera_switch():
+    """Switch camera mode live from the dashboard: {"type": "usb"|"pi"|"auto", "usb_index": 0}"""
+    import camera
+    from flask import request
+    data = request.get_json(silent=True) or {}
+    cam_type = data.get("type")
+    usb_index = data.get("usb_index")
+    try:
+        mode = camera.set_camera_mode(cam_type, usb_index)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    log.info("Camera switch via dashboard → %s", mode)
+    return jsonify({"status": "ok", "camera": mode})
 
 
 @app.route("/config", methods=["POST"])

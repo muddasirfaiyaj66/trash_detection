@@ -95,6 +95,23 @@
   .btn:hover { background: #252b3a; }
   .btn.primary { background: rgba(59,130,246,.2); border-color: rgba(59,130,246,.45); color: #93c5fd; }
 
+  .cam-switch {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .seg {
+    font-size: 0.75rem; font-weight: 600;
+    padding: 7px 12px; border: none;
+    background: var(--card); color: var(--muted);
+    cursor: pointer; transition: background .15s, color .15s;
+  }
+  .seg + .seg { border-left: 1px solid var(--border); }
+  .seg:hover { background: #252b3a; }
+  .seg.active { background: rgba(34,197,94,.18); color: var(--green); }
+  .seg:disabled { opacity: .55; cursor: progress; }
+
   .video-wrap {
     position: relative; width: 100%;
     aspect-ratio: 16 / 9;
@@ -320,7 +337,10 @@
   <section class="video-panel" id="video-panel">
     <div class="video-toolbar">
       <span>Camera: <strong id="cam-type">—</strong></span>
-      <span id="stream-mode">MJPEG</span>
+      <div class="cam-switch" role="group" aria-label="Camera mode">
+        <button type="button" class="seg" id="cam-pi" onclick="switchCamera('pi')">Pi Cam</button>
+        <button type="button" class="seg" id="cam-usb" onclick="switchCamera('usb')">USB Cam</button>
+      </div>
       <div class="toolbar-actions">
         <button type="button" class="btn" id="btn-fit" onclick="toggleFit()">Fit view</button>
         <button type="button" class="btn" onclick="reloadStream()">Reload</button>
@@ -480,6 +500,46 @@ function toggleFullscreen() {
     document.exitFullscreen();
   }
 }
+
+const camPiBtn = document.getElementById('cam-pi');
+const camUsbBtn = document.getElementById('cam-usb');
+let switching = false;
+
+function setCamButtons(type) {
+  camPiBtn.classList.toggle('active', type === 'pi');
+  camUsbBtn.classList.toggle('active', type === 'usb');
+}
+
+async function switchCamera(type) {
+  if (switching) return;
+  switching = true;
+  camPiBtn.disabled = camUsbBtn.disabled = true;
+  addLog('Switching to ' + type.toUpperCase() + ' camera…', 'level');
+  setStreamPill('wait');
+  overlay.classList.remove('hidden');
+  overlayTitle.textContent = 'Switching camera';
+  overlayMsg.textContent = 'Starting ' + type.toUpperCase() + ' camera…';
+  try {
+    const r = await fetch('/camera/switch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type })
+    });
+    if (r.ok) {
+      setCamButtons(type);
+      addLog(type.toUpperCase() + ' camera selected', 'open');
+      setTimeout(reloadStream, 1500);
+    } else {
+      const e = await r.json().catch(() => ({}));
+      addLog('Switch failed: ' + (e.error || r.status), 'close');
+    }
+  } catch {
+    addLog('Switch request failed', 'close');
+  } finally {
+    camPiBtn.disabled = camUsbBtn.disabled = false;
+    switching = false;
+  }
+}
 document.addEventListener('fullscreenchange', () => {
   btnFs.textContent = document.fullscreenElement ? '✕ Exit' : '⛶ Fullscreen';
 });
@@ -585,6 +645,7 @@ async function poll() {
     if (data.camera) {
       document.getElementById('cam-type').textContent =
         data.camera.type + (data.camera.type === 'usb' ? ' #' + data.camera.usb_index : '');
+      if (!switching) setCamButtons(data.camera.type);
     }
     if (data.stream) {
       document.getElementById('meta-fps').textContent =
