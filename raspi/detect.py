@@ -33,7 +33,7 @@ from dustbin_api import (
     LidAutoCloseThread,
     FillLevelPoller,
 )
-from streamer import start_stream_server, push_frame
+from streamer import start_stream_server, push_frame, set_camera_status
 
 # ── Logging setup ─────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -86,16 +86,21 @@ def main():
         log.info("Camera: Pi Camera Module (Picamera2 / libcamera)")
     else:
         log.info("Camera: auto (USB index %d, then Pi cam)", USB_CAMERA_INDEX)
-    cap = initialize_camera(CAMERA_SOURCE)
-    if cap is None:
-        log.error(
-            "CRITICAL: Cannot open camera (CAMERA_TYPE=%s). "
-            "See raspi/README.md — USB: v4l2-ctl; Pi: picamera2",
-            CAMERA_TYPE,
-        )
-        return
+    cap = None
+    while cap is None:
+        cap = initialize_camera(CAMERA_SOURCE)
+        if cap is None:
+            msg = (
+                f"Cannot open camera (CAMERA_TYPE={CAMERA_TYPE}). "
+                "USB: v4l2-ctl --list-devices | Pi: libcamera-hello -t 2000"
+            )
+            set_camera_status(False, msg)
+            log.error("%s — retrying in 3s (dashboard stays up)…", msg)
+            time.sleep(3)
+        else:
+            set_camera_status(True, None)
 
-    log.info("Camera opened ✓  –  Starting detection loop…")
+    log.info("Camera opened — starting detection loop…")
     log.info("Ground-station stream → http://0.0.0.0:5000/")
 
     fail_streak = 0
@@ -110,18 +115,25 @@ def main():
                         fail_streak,
                     )
                 if fail_streak >= 50:
+                    set_camera_status(False, "Camera stalled — reconnecting…")
                     new_cap = reopen_camera(cap)
                     if new_cap is not None:
                         cap = new_cap
                         fail_streak = 0
+                        set_camera_status(True, None)
                         log.info("Camera reopened")
                     else:
+                        set_camera_status(False, "Could not reopen camera")
                         log.error("Could not reopen camera")
                 time.sleep(0.05)
                 continue
             fail_streak = 0
+            set_camera_status(True, None)
 
-            # 4. Run YOLO inference (stream=True is memory-efficient)
+            # Push raw frame immediately so the dashboard updates while YOLO runs
+            push_frame(encode_jpeg(frame))
+
+            # 4. Run YOLO inference
             results = model.predict(
                 source=frame,
                 conf=CONFIDENCE,

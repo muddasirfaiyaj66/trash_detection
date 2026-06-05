@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0a0c10">
+<title>Trash Detection – Ground Station</title>
+<style>
+  :root {
+    --bg: #0a0c10;
+    --surface: #12151c;
+    --card: #1a1f2b;
+    --border: rgba(255,255,255,.08);
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --blue: #3b82f6;
+    --green: #22c55e;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --radius: 14px;
+    --header-h: 56px;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    min-height: 100dvh;
+  }
+
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    height: var(--header-h);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px;
+    background: rgba(10,12,16,.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+  .header h1 {
+    font-size: clamp(0.95rem, 3.5vw, 1.15rem);
+    font-weight: 700;
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pill {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .pill.live { color: var(--green); border-color: rgba(34,197,94,.4); background: rgba(34,197,94,.12); }
+  .pill.wait { color: var(--amber); border-color: rgba(245,158,11,.4); background: rgba(245,158,11,.12); }
+  .pill.off { color: var(--red); border-color: rgba(239,68,68,.4); background: rgba(239,68,68,.12); }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 16px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  @media (min-width: 900px) {
+    .layout {
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+      align-items: start;
+    }
+  }
+
+  .video-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .video-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .video-toolbar strong { color: var(--text); }
+  .btn {
+    margin-left: auto;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .btn:active { transform: scale(0.98); }
+
+  .video-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    background: #000;
+  }
+  .video-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+    background: #0f1419;
+  }
+  .video-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 24px;
+    text-align: center;
+    background: rgba(10,12,16,.85);
+    pointer-events: none;
+    transition: opacity .25s;
+  }
+  .video-overlay.hidden { opacity: 0; visibility: hidden; }
+  .video-overlay h2 { font-size: 1rem; font-weight: 600; }
+  .video-overlay p { font-size: 0.85rem; color: var(--muted); max-width: 320px; }
+  .spinner {
+    width: 36px; height: 36px;
+    border: 3px solid var(--border);
+    border-top-color: var(--green);
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .stream-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 10px 12px;
+    font-size: 0.75rem;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+  }
+  .stream-meta span b { color: var(--text); font-weight: 600; }
+
+  .sidebar { display: flex; flex-direction: column; gap: 16px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+  .card-h {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+
+  .bins { display: flex; flex-direction: column; gap: 20px; }
+  @media (min-width: 500px) and (max-width: 899px) {
+    .bins { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  }
+
+  .bin-card {
+    padding: 14px;
+    border-radius: 12px;
+    background: rgba(0,0,0,.25);
+    border: 1px solid var(--border);
+  }
+  .bin-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .bin-icon { font-size: 1.5rem; line-height: 1; }
+  .bin-title { font-weight: 600; font-size: 0.95rem; }
+  .bin-lid { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+  .bin-lid.open { color: var(--green); }
+
+  .bar-track {
+    height: 10px;
+    border-radius: 999px;
+    background: rgba(255,255,255,.08);
+    overflow: hidden;
+    margin-top: 8px;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    transition: width .4s ease;
+  }
+  .bar-pct {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-align: right;
+    margin-top: 6px;
+  }
+
+  .sliders { margin-top: 14px; display: flex; flex-direction: column; gap: 14px; }
+  .slider-row label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .slider-row label span { color: var(--text); font-size: 0.9rem; }
+  input[type="range"] {
+    width: 100%;
+    height: 28px;
+    accent-color: var(--blue);
+    cursor: pointer;
+  }
+
+  .log {
+    font-family: ui-monospace, "Cascadia Code", monospace;
+    font-size: 0.72rem;
+    line-height: 1.45;
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 10px;
+    background: rgba(0,0,0,.35);
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 4px;
+  }
+  .log .open { color: var(--green); }
+  .log .close { color: var(--amber); }
+  .log .level { color: var(--blue); }
+
+  .legend { display: flex; flex-direction: column; gap: 10px; font-size: 0.85rem; }
+  .legend-item { display: flex; align-items: center; gap: 10px; }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <span aria-hidden="true">🗑️</span>
+  <h1>Trash Detection</h1>
+  <span id="stream-pill" class="pill wait">Connecting</span>
+</header>
+
+<main class="layout">
+  <section class="video-panel">
+    <div class="video-toolbar">
+      <span>Camera: <strong id="cam-type">—</strong></span>
+      <span id="stream-mode">MJPEG</span>
+      <button type="button" class="btn" id="btn-reload" onclick="reloadStream()">Reload stream</button>
+    </div>
+    <div class="video-wrap">
+      <img id="feed" alt="Live detection feed" crossorigin="anonymous">
+      <div id="overlay" class="video-overlay">
+        <div class="spinner"></div>
+        <h2 id="overlay-title">Waiting for camera</h2>
+        <p id="overlay-msg">Start detect.py on the Pi. Stream appears when frames are received.</p>
+      </div>
+    </div>
+    <div class="stream-meta">
+      <span>FPS: <b id="meta-fps">0</b></span>
+      <span>Frames: <b id="meta-frames">0</b></span>
+      <span>Last frame: <b id="meta-age">—</b></span>
+    </div>
+  </section>
+
+  <aside class="sidebar">
+    <div class="card">
+      <div class="card-h">Dustbins</div>
+      <div class="bins">
+        <div class="bin-card" data-bin="paper">
+          <div class="bin-head">
+            <span class="bin-icon">📄</span>
+            <div>
+              <div class="bin-title">Paper</div>
+              <div class="bin-lid" id="paper-lid">Lid closed</div>
+            </div>
+          </div>
+          <div class="bar-track"><div class="bar-fill" id="paper-bar" style="width:0%;background:var(--blue)"></div></div>
+          <div class="bar-pct" id="paper-level">0%</div>
+          <div class="sliders">
+            <div class="slider-row">
+              <label>Open <span><span id="paper-open-val">90</span>°</span></label>
+              <input type="range" id="paper-open-input" min="0" max="180" value="90">
+            </div>
+            <div class="slider-row">
+              <label>Close <span><span id="paper-close-val">0</span>°</span></label>
+              <input type="range" id="paper-close-input" min="0" max="180" value="0">
+            </div>
+          </div>
+        </div>
+        <div class="bin-card" data-bin="plastic">
+          <div class="bin-head">
+            <span class="bin-icon">🧴</span>
+            <div>
+              <div class="bin-title">Plastic</div>
+              <div class="bin-lid" id="plastic-lid">Lid closed</div>
+            </div>
+          </div>
+          <div class="bar-track"><div class="bar-fill" id="plastic-bar" style="width:0%;background:var(--green)"></div></div>
+          <div class="bar-pct" id="plastic-level">0%</div>
+          <div class="sliders">
+            <div class="slider-row">
+              <label>Open <span><span id="plastic-open-val">90</span>°</span></label>
+              <input type="range" id="plastic-open-input" min="0" max="180" value="90">
+            </div>
+            <div class="slider-row">
+              <label>Close <span><span id="plastic-close-val">0</span>°</span></label>
+              <input type="range" id="plastic-close-input" min="0" max="180" value="0">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">Event log</div>
+      <div class="log" id="log-box">
+        <div>System ready</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">Detection classes</div>
+      <div class="legend">
+        <div class="legend-item"><span class="swatch" style="background:var(--blue)"></span>Class 2 Paper → paper lid</div>
+        <div class="legend-item"><span class="swatch" style="background:var(--green)"></span>Class 3 Plastic → plastic lid</div>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<script>
+const feed = document.getElementById('feed');
+const overlay = document.getElementById('overlay');
+const overlayTitle = document.getElementById('overlay-title');
+const overlayMsg = document.getElementById('overlay-msg');
+const streamPill = document.getElementById('stream-pill');
+const logBox = document.getElementById('log-box');
+let prevState = { paper: {}, plastic: {} };
+let streamOk = false;
+
+function reloadStream() {
+  feed.src = '/video_feed?ts=' + Date.now();
+  addLog('Stream reload requested');
+}
+
+function setStreamPill(state) {
+  streamPill.className = 'pill ' + state;
+  const labels = { live: 'Live', wait: 'Connecting', off: 'Offline' };
+  streamPill.textContent = labels[state] || state;
+}
+
+function updateOverlay(stream) {
+  const age = stream.last_frame_age_sec;
+  const active = stream.active && age !== null && age < 4;
+  if (active) {
+    overlay.classList.add('hidden');
+    setStreamPill('live');
+    streamOk = true;
+    return;
+  }
+  overlay.classList.remove('hidden');
+  if (stream.error) {
+    setStreamPill('off');
+    overlayTitle.textContent = 'Camera offline';
+    overlayMsg.textContent = stream.error;
+  } else if (age !== null && age >= 4) {
+    setStreamPill('wait');
+    overlayTitle.textContent = 'Stream stalled';
+    overlayMsg.textContent = 'No new frames for ' + Math.round(age) + 's. Check detect.py on the Pi.';
+  } else {
+    setStreamPill('wait');
+    overlayTitle.textContent = 'Waiting for camera';
+    overlayMsg.textContent = 'Run detect.py on the Pi. Set CAMERA_TYPE to usb or pi in config.py.';
+  }
+}
+
+feed.onload = () => {
+  if (feed.naturalWidth > 0) overlay.classList.add('hidden');
+};
+feed.onerror = () => {
+  overlay.classList.remove('hidden');
+  setStreamPill('off');
+  overlayTitle.textContent = 'Cannot load stream';
+  overlayMsg.textContent = 'Open /video_feed in a new tab or restart detect.py.';
+};
+
+reloadStream();
+setInterval(reloadStream, 60000);
+
+function addLog(msg, type) {
+  const el = document.createElement('div');
+  if (type) el.className = type;
+  el.textContent = new Date().toLocaleTimeString() + ' ' + msg;
+  logBox.prepend(el);
+  while (logBox.children.length > 50) logBox.removeChild(logBox.lastChild);
+}
+
+function levelColor(pct) {
+  if (pct >= 90) return 'var(--red)';
+  if (pct >= 60) return 'var(--amber)';
+  return pct > 30 ? 'var(--blue)' : 'var(--green)';
+}
+
+function updateBins(data) {
+  ['paper','plastic'].forEach(bin => {
+    const s = data[bin];
+    const lid = document.getElementById(bin + '-lid');
+    const bar = document.getElementById(bin + '-bar');
+    const lvl = document.getElementById(bin + '-level');
+    const isOpen = s.lid === 'open';
+    lid.textContent = isOpen ? 'Lid open' : 'Lid closed';
+    lid.className = 'bin-lid' + (isOpen ? ' open' : '');
+    if (prevState[bin].lid !== undefined && prevState[bin].lid !== s.lid) {
+      addLog(bin + ' lid ' + (isOpen ? 'opened' : 'closed'), isOpen ? 'open' : 'close');
+    }
+    if (prevState[bin].level_pct !== s.level_pct) {
+      addLog(bin + ' fill ' + s.level_pct + '%', 'level');
+    }
+    const pct = s.level_pct ?? 0;
+    bar.style.width = pct + '%';
+    bar.style.background = levelColor(pct);
+    lvl.textContent = pct + '%';
+    lvl.style.color = levelColor(pct);
+    const oIn = document.getElementById(bin + '-open-input');
+    const cIn = document.getElementById(bin + '-close-input');
+    if (document.activeElement !== oIn && s.open_deg !== undefined) {
+      oIn.value = s.open_deg;
+      document.getElementById(bin + '-open-val').textContent = s.open_deg;
+    }
+    if (document.activeElement !== cIn && s.close_deg !== undefined) {
+      cIn.value = s.close_deg;
+      document.getElementById(bin + '-close-val').textContent = s.close_deg;
+    }
+    prevState[bin] = { ...s };
+  });
+}
+
+async function poll() {
+  try {
+    const r = await fetch('/status');
+    if (!r.ok) return;
+    const data = await r.json();
+    if (data.camera) {
+      document.getElementById('cam-type').textContent =
+        data.camera.type + (data.camera.type === 'usb' ? ' #' + data.camera.usb_index : '');
+    }
+    if (data.stream) {
+      document.getElementById('meta-fps').textContent = (data.stream.fps || 0).toFixed(1);
+      document.getElementById('meta-frames').textContent = data.stream.frame_count || 0;
+      const age = data.stream.last_frame_age_sec;
+      document.getElementById('meta-age').textContent =
+        age === null ? '—' : (age < 1 ? 'just now' : age.toFixed(1) + 's ago');
+      document.getElementById('stream-mode').textContent =
+        data.stream.websocket ? 'MJPEG + WS available' : 'MJPEG';
+      updateOverlay(data.stream);
+    }
+    updateBins(data);
+  } catch (e) {
+    setStreamPill('off');
+  }
+}
+
+async function sendAngle(bin) {
+  const openVal = +document.getElementById(bin + '-open-input').value;
+  const closeVal = +document.getElementById(bin + '-close-input').value;
+  document.getElementById(bin + '-open-val').textContent = openVal;
+  document.getElementById(bin + '-close-val').textContent = closeVal;
+  try {
+    const r = await fetch('/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bin, open_deg: openVal, close_deg: closeVal })
+    });
+    addLog(r.ok ? bin + ' angles saved' : bin + ' config failed', r.ok ? 'level' : 'close');
+  } catch {
+    addLog('Config request failed', 'close');
+  }
+}
+
+['paper','plastic'].forEach(bin => {
+  ['open','close'].forEach(t => {
+    const input = document.getElementById(bin + '-' + t + '-input');
+    const val = document.getElementById(bin + '-' + t + '-val');
+    input.addEventListener('input', e => { val.textContent = e.target.value; });
+    input.addEventListener('change', () => sendAngle(bin));
+  });
+});
+
+poll();
+setInterval(poll, 1500);
+</script>
+</body>
+</html>
