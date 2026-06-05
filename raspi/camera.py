@@ -8,6 +8,7 @@ import site
 import time
 import logging
 import subprocess
+from glob import glob
 from shutil import which
 import cv2
 import numpy as np
@@ -333,6 +334,36 @@ def _try_index(idx: int, backend: int | None, label: str) -> cv2.VideoCapture | 
     return None
 
 
+def _try_device_path(path: str, label: str) -> cv2.VideoCapture | None:
+    """Try opening /dev/videoN directly before index-based probing."""
+    if not os.path.exists(path):
+        return None
+
+    log.info("Trying %s on %s...", label, path)
+    for backend, backend_name in ((cv2.CAP_V4L2, "V4L2"), (None, "default")):
+        try:
+            cap = cv2.VideoCapture(path) if backend is None else cv2.VideoCapture(path, backend)
+            if cap.isOpened() and _verify_capture(cap, f"{label} {path} ({backend_name})"):
+                log.info("Successfully opened camera: %s via %s", path, backend_name)
+                return cap
+            if cap.isOpened():
+                cap.release()
+        except Exception as e:
+            log.debug("%s failed on %s via %s: %s", label, path, backend_name, e)
+
+    return None
+
+
+def _list_v4l2_indices() -> list[int]:
+    """Discover available /dev/videoN indices dynamically."""
+    found = []
+    for dev in glob("/dev/video*"):
+        suffix = dev.rsplit("video", 1)[-1]
+        if suffix.isdigit():
+            found.append(int(suffix))
+    return sorted(set(found))
+
+
 def _open_pi_camera():
     """
     Pi Camera Module — try in order:
@@ -371,19 +402,42 @@ def _open_pi_camera():
 
 def _open_usb_camera(idx: int = USB_CAMERA_INDEX) -> cv2.VideoCapture | None:
     """USB webcam via V4L2, then default backend, then other /dev/video indices."""
+    cap = _try_device_path(f"/dev/video{idx}", "USB device path")
+    if cap is not None:
+        return cap
+
     cap = _try_index(idx, cv2.CAP_V4L2, "V4L2 USB")
     if cap is not None:
         return cap
+
     cap = _try_index(idx, None, "default USB backend")
     if cap is not None:
         return cap
-    log.info("Scanning alternative USB indices…")
-    for alt_idx in [0, 1, 2, 4]:
+
+    discovered = _list_v4l2_indices()
+    fallback = [0, 1, 2, 3, 4]
+    ordered = [n for n in discovered if n != idx] + [n for n in fallback if n not in discovered and n != idx]
+    log.info("Scanning alternative USB indices: %s", ordered)
+
+    for alt_idx in ordered:
         if alt_idx == idx:
             continue
+
+        cap = _try_device_path(f"/dev/video{alt_idx}", "USB device path")
+        if cap is not None:
+            return cap
+
         cap = _try_index(alt_idx, cv2.CAP_V4L2, f"V4L2 USB index {alt_idx}")
         if cap is not None:
             return cap
+
+        cap = _try_index(alt_idx, None, f"default USB backend index {alt_idx}")
+        if cap is not None:
+            return cap
+
+    log.error(
+        "USB camera not found/readable. Run 'v4l2-ctl --list-devices' and set USB_CAMERA_INDEX to the correct /dev/videoN"
+    )
     return None
 
 
