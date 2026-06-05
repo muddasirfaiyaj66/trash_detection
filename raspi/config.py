@@ -40,6 +40,13 @@ CAMERA_WARMUP_FRAMES = 15
 # Pi Camera: use full sensor crop (widest view, less “zoomed in”)
 CAMERA_WIDE_FOV = os.environ.get("CAMERA_WIDE_FOV", "true").lower() in ("1", "true", "yes")
 
+# ── Image orientation (also live-adjustable from the dashboard) ───────────────
+#   CAMERA_FLIP_H = mirror left/right, CAMERA_FLIP_V = flip up/down
+#   CAMERA_ROTATE = 0 | 90 | 180 | 270  (degrees, clockwise)
+CAMERA_FLIP_H = os.environ.get("CAMERA_FLIP_H", "false").lower() in ("1", "true", "yes")
+CAMERA_FLIP_V = os.environ.get("CAMERA_FLIP_V", "false").lower() in ("1", "true", "yes")
+CAMERA_ROTATE = int(os.environ.get("CAMERA_ROTATE", "0"))
+
 # Legacy alias (detect.py / camera.py read CAMERA_SOURCE from this)
 def _camera_source():
     if CAMERA_TYPE == "pi":
@@ -99,10 +106,21 @@ API_TIMEOUT         = 5      # seconds before HTTP request times out
 # ── Ground-station stream ─────────────────────────────────────────────────────
 # Stream runs at full camera rate; YOLO runs separately so video stays smooth.
 STREAM_FPS      = int(os.environ.get("STREAM_FPS", "30"))
-INFERENCE_FPS   = int(os.environ.get("INFERENCE_FPS", "8"))
-YOLO_IMGSZ      = int(os.environ.get("YOLO_IMGSZ", "320"))   # smaller = faster on Pi
+INFERENCE_FPS   = int(os.environ.get("INFERENCE_FPS", "15"))  # thread runs as fast as the Pi allows up to this
+YOLO_IMGSZ      = int(os.environ.get("YOLO_IMGSZ", "320"))   # smaller = faster on Pi (256 = even faster)
 MJPEG_QUALITY   = int(os.environ.get("MJPEG_QUALITY", "70"))
 MJPEG_MAX_FPS   = STREAM_FPS
+
+# How long (seconds) the last detection boxes stay drawn on the stream between
+# inferences. Higher = smoother boxes when YOLO runs slower than the video.
+DETECTION_TTL   = float(os.environ.get("DETECTION_TTL", "1.2"))
+
+# ── Inference acceleration (NCNN) ─────────────────────────────────────────────
+# NCNN is an ARM-optimized runtime that is typically 2-3x faster than PyTorch on
+# a Raspberry Pi CPU. On first run the model is auto-exported to best_ncnn_model/.
+# Needs: pip install ncnn   (export also pulls pnnx automatically). Falls back to
+# the .pt model if NCNN is not installed.
+USE_NCNN        = os.environ.get("USE_NCNN", "true").lower() in ("1", "true", "yes")
 
 # ── Model Warmup ──────────────────────────────────────────────────────────────
 # Run one inference as soon as the first frame arrives so detections start immediately.

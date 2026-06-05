@@ -5,13 +5,14 @@
 import time
 import logging
 import threading
+from pathlib import Path
 
 import cv2
 from ultralytics import YOLO
 
 from config import (
     MODEL_PATH, CLASS_NAMES, CAMERA_TYPE, USB_CAMERA_INDEX, ESP32_ENABLED,
-    STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ,
+    STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ, USE_NCNN,
 )
 from dustbin_api import LidAutoCloseThread, FillLevelPoller
 from streamer import start_stream_server
@@ -25,6 +26,33 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
+def load_model() -> YOLO:
+    """
+    Load the detector. On a Pi, prefer an NCNN export (2-3x faster on ARM CPU).
+    The .pt is auto-converted to best_ncnn_model/ on first run. Falls back to the
+    PyTorch model if NCNN isn't installed.
+    """
+    log.info("Loading YOLO model: %s", MODEL_PATH)
+    model = YOLO(MODEL_PATH)
+    if not USE_NCNN:
+        log.info("Model loaded (PyTorch)")
+        return model
+
+    ncnn_dir = Path(f"{Path(MODEL_PATH).with_suffix('')}_ncnn_model")
+    try:
+        if not ncnn_dir.exists():
+            log.info("Exporting model to NCNN for faster Pi inference (one-time, ~1-2 min)…")
+            model.export(format="ncnn", imgsz=YOLO_IMGSZ)
+        log.info("Loading NCNN model: %s", ncnn_dir)
+        return YOLO(str(ncnn_dir), task="detect")
+    except Exception as e:
+        log.warning(
+            "NCNN unavailable (%s). Using PyTorch model (slower). "
+            "For faster detection run: pip install ncnn", e,
+        )
+        return model
+
+
 def main():
     log.info("=" * 60)
     log.info("  Trash Detection – Raspberry Pi Node")
@@ -32,8 +60,7 @@ def main():
     log.info("  Stream %d FPS | YOLO %d FPS @ imgsz %d", STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ)
     log.info("=" * 60)
 
-    log.info("Loading YOLO model: %s", MODEL_PATH)
-    model = YOLO(MODEL_PATH)
+    model = load_model()
     log.info("Model loaded")
 
     if ESP32_ENABLED:

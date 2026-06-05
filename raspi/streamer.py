@@ -198,6 +198,7 @@ def status():
                 "usb_index": cam_mode["usb_index"],
                 "width": CAMERA_WIDTH,
                 "height": CAMERA_HEIGHT,
+                "transform": camera.get_camera_transform(),
             },
             "stream": _stream_status(),
         }
@@ -218,6 +219,28 @@ def camera_switch():
         return jsonify({"error": str(e)}), 400
     log.info("Camera switch via dashboard → %s", mode)
     return jsonify({"status": "ok", "camera": mode})
+
+
+@app.route("/camera/transform", methods=["POST"])
+def camera_transform():
+    """Flip / rotate the feed live: {"flip_h": bool, "flip_v": bool, "rotate": 0|90|180|270}.
+    Pass {"rotate_step": true} to cycle rotation 0→90→180→270."""
+    import camera
+    from flask import request
+    data = request.get_json(silent=True) or {}
+    rotate = data.get("rotate")
+    if data.get("rotate_step"):
+        rotate = (camera.get_camera_transform()["rotate"] + 90) % 360
+    try:
+        t = camera.set_camera_transform(
+            flip_h=data.get("flip_h"),
+            flip_v=data.get("flip_v"),
+            rotate=rotate,
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    log.info("Camera transform → %s", t)
+    return jsonify({"status": "ok", "transform": t})
 
 
 @app.route("/config", methods=["POST"])

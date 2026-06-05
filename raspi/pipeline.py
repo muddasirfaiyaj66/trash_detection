@@ -14,8 +14,9 @@ from config import (
     CONFIDENCE, LINE_WIDTH, DETECT_CLASSES, CLASS_NAMES,
     MJPEG_QUALITY, STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ,
     CAMERA_REOPEN_THRESHOLD, MODEL_WARMUP, MODEL_WARMUP_TIMEOUT,
+    DETECTION_TTL,
 )
-from camera import initialize_camera, consume_switch_request, get_camera_mode
+from camera import initialize_camera, consume_switch_request, get_camera_mode, apply_transform
 from dustbin_api import on_detection
 from streamer import push_frame, set_camera_status
 
@@ -85,7 +86,7 @@ class FrameHub:
             if self._frame is None:
                 return None
             out = self._frame.copy()
-            boxes = self._boxes if (time.time() - self._boxes_ts) < 0.6 else []
+            boxes = self._boxes if (time.time() - self._boxes_ts) < DETECTION_TTL else []
         _draw_boxes(out, boxes)
         return out
 
@@ -181,6 +182,7 @@ class CaptureStreamThread(threading.Thread):
                 time.sleep(0.01)
                 continue
 
+            frame = apply_transform(frame)
             last_frame_time = time.time()
             self.fail_streak = 0
             set_camera_status(True, None)

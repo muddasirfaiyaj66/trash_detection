@@ -22,6 +22,9 @@ from config import (
     CAMERA_HEIGHT,
     CAMERA_WARMUP_FRAMES,
     CAMERA_WIDE_FOV,
+    CAMERA_FLIP_H,
+    CAMERA_FLIP_V,
+    CAMERA_ROTATE,
     STREAM_FPS,
     USB_FOURCC,
     USB_V4L2_SET_FORMAT,
@@ -69,6 +72,54 @@ def _resolve_source():
     if mode["type"] == "pi":
         return "libcamera"
     return mode["usb_index"]
+
+
+# ── Runtime image orientation (flip / rotate, live-adjustable) ────────────────
+_transform_lock = threading.Lock()
+_transform = {
+    "flip_h": bool(CAMERA_FLIP_H),
+    "flip_v": bool(CAMERA_FLIP_V),
+    "rotate": int(CAMERA_ROTATE) % 360,
+}
+
+
+def set_camera_transform(flip_h=None, flip_v=None, rotate=None) -> dict:
+    """Update flip/rotate. rotate must be 0/90/180/270. Returns the new state."""
+    with _transform_lock:
+        if flip_h is not None:
+            _transform["flip_h"] = bool(flip_h)
+        if flip_v is not None:
+            _transform["flip_v"] = bool(flip_v)
+        if rotate is not None:
+            r = int(rotate) % 360
+            if r not in (0, 90, 180, 270):
+                raise ValueError("rotate must be 0, 90, 180, or 270")
+            _transform["rotate"] = r
+        return dict(_transform)
+
+
+def get_camera_transform() -> dict:
+    with _transform_lock:
+        return dict(_transform)
+
+
+def apply_transform(frame):
+    """Apply the current rotate + flip to a BGR frame (cheap, in capture thread)."""
+    with _transform_lock:
+        fh, fv, rot = _transform["flip_h"], _transform["flip_v"], _transform["rotate"]
+    if rot == 90:
+        frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+    elif rot == 180:
+        frame = cv2.rotate(frame, cv2.ROTATE_180)
+    elif rot == 270:
+        frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    if fh and fv:
+        frame = cv2.flip(frame, -1)
+    elif fh:
+        frame = cv2.flip(frame, 1)
+    elif fv:
+        frame = cv2.flip(frame, 0)
+    return frame
 
 # Raspberry Pi OS installs picamera2 here; venvs often cannot see it otherwise.
 _PI_SITE_PATHS = (

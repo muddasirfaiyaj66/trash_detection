@@ -114,6 +114,7 @@
   .btn:hover { background: rgba(255,255,255,.1); border-color: var(--border-strong); transform: translateY(-1px); }
   .btn:active { transform: translateY(0); }
   .btn.primary { background: linear-gradient(145deg, rgba(59,130,246,.35), rgba(37,99,235,.25)); border-color: rgba(59,130,246,.5); color: #bfdbfe; }
+  .btn.active { background: linear-gradient(145deg, rgba(34,197,94,.30), rgba(22,163,74,.20)); border-color: rgba(34,197,94,.55); color: #86efac; }
 
   .cam-switch { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
   .seg {
@@ -282,6 +283,9 @@
         <button type="button" class="seg" id="cam-usb" onclick="switchCamera('usb')">USB Cam</button>
       </div>
       <div class="toolbar-actions">
+        <button type="button" class="btn" id="btn-fliph" onclick="toggleFlip('h')" title="Mirror left/right">⇋ Flip H</button>
+        <button type="button" class="btn" id="btn-flipv" onclick="toggleFlip('v')" title="Flip up/down">⇅ Flip V</button>
+        <button type="button" class="btn" id="btn-rotate" onclick="rotateStep()" title="Rotate 90°">⟳ 0°</button>
         <button type="button" class="btn" id="btn-fit" onclick="toggleFit()">Fit view</button>
         <button type="button" class="btn" onclick="reloadStream()">Reload</button>
         <button type="button" class="btn primary" id="btn-fs" onclick="toggleFullscreen()">⛶ Fullscreen</button>
@@ -439,10 +443,14 @@ const btnFs = document.getElementById('btn-fs');
 const btnFit = document.getElementById('btn-fit');
 const camPiBtn = document.getElementById('cam-pi');
 const camUsbBtn = document.getElementById('cam-usb');
+const btnFlipH = document.getElementById('btn-fliph');
+const btnFlipV = document.getElementById('btn-flipv');
+const btnRotate = document.getElementById('btn-rotate');
 let prevState = { paper: {}, plastic: {} };
 let shownPct = { paper: 0, plastic: 0 };
 let fitContain = true;
 let switching = false;
+let transform = { flip_h: false, flip_v: false, rotate: 0 };
 
 /* ── Level → color mapping (single source of truth) ── */
 const LEVELS = {
@@ -479,6 +487,33 @@ function setCamButtons(type) {
   camPiBtn.classList.toggle('active', type === 'pi');
   camUsbBtn.classList.toggle('active', type === 'usb');
 }
+
+/* ── Camera flip / rotate ── */
+function renderTransform() {
+  btnFlipH.classList.toggle('active', !!transform.flip_h);
+  btnFlipV.classList.toggle('active', !!transform.flip_v);
+  btnRotate.classList.toggle('active', (transform.rotate || 0) !== 0);
+  btnRotate.textContent = '⟳ ' + (transform.rotate || 0) + '°';
+}
+async function postTransform(body) {
+  try {
+    const r = await fetch('/camera/transform', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (r.ok) {
+      const d = await r.json();
+      transform = d.transform || transform;
+      renderTransform();
+      addLog('View: flip ' + (transform.flip_h ? 'H' : '-') + (transform.flip_v ? 'V' : '-') + ' · rotate ' + transform.rotate + '°', 'level');
+    } else { addLog('Transform failed', 'close'); }
+  } catch { addLog('Transform request failed', 'close'); }
+}
+function toggleFlip(axis) {
+  if (axis === 'h') postTransform({ flip_h: !transform.flip_h });
+  else postTransform({ flip_v: !transform.flip_v });
+}
+function rotateStep() { postTransform({ rotate_step: true }); }
 async function switchCamera(type) {
   if (switching) return;
   switching = true;
@@ -597,6 +632,7 @@ async function poll() {
       document.getElementById('cam-type').textContent =
         data.camera.type + (data.camera.type === 'usb' ? ' #' + data.camera.usb_index : '');
       if (!switching) setCamButtons(data.camera.type);
+      if (data.camera.transform) { transform = data.camera.transform; renderTransform(); }
     }
     if (data.stream) {
       document.getElementById('meta-fps').textContent =

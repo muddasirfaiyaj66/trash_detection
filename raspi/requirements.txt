@@ -5,4 +5,6 @@ simple-websocket>=1.0.0
 requests>=2.31.0
 opencv-python-headless>=4.8.0
 numpy>=1.24.0
+# NCNN runtime for 2-3x faster YOLO inference on the Raspberry Pi CPU
+ncnn>=1.0.20240410
 # Pi Camera Module on Bookworm (install on Pi only): pip install picamera2
