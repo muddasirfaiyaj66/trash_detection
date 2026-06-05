@@ -280,7 +280,7 @@
       </div>
     </div>
     <div class="stream-meta">
-      <span>FPS: <b id="meta-fps">0</b></span>
+      <span>Stream FPS: <b id="meta-fps">0 / 30</b></span>
       <span>Frames: <b id="meta-frames">0</b></span>
       <span>Last frame: <b id="meta-age">—</b></span>
     </div>
@@ -469,7 +469,8 @@ async function poll() {
         data.camera.type + (data.camera.type === 'usb' ? ' #' + data.camera.usb_index : '');
     }
     if (data.stream) {
-      document.getElementById('meta-fps').textContent = (data.stream.fps || 0).toFixed(1);
+      document.getElementById('meta-fps').textContent =
+        (data.stream.fps || 0).toFixed(1) + ' / ' + (data.stream.target_fps || 30);
       document.getElementById('meta-frames').textContent = data.stream.frame_count || 0;
       const age = data.stream.last_frame_age_sec;
       document.getElementById('meta-age').textContent =

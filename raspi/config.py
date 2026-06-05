@@ -90,5 +90,9 @@ LEVEL_POLL_INTERVAL = 10.0   # seconds between fill-level polls
 API_TIMEOUT         = 5      # seconds before HTTP request times out
 
 # ── Ground-station stream ─────────────────────────────────────────────────────
-MJPEG_QUALITY = 80
-MJPEG_MAX_FPS = 25
+# Stream runs at full camera rate; YOLO runs separately so video stays smooth.
+STREAM_FPS      = int(os.environ.get("STREAM_FPS", "30"))
+INFERENCE_FPS   = int(os.environ.get("INFERENCE_FPS", "8"))
+YOLO_IMGSZ      = int(os.environ.get("YOLO_IMGSZ", "320"))   # smaller = faster on Pi
+MJPEG_QUALITY   = int(os.environ.get("MJPEG_QUALITY", "70"))
+MJPEG_MAX_FPS   = STREAM_FPS

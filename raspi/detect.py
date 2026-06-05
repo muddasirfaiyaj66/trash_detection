@@ -1,41 +1,22 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# detect.py  –  Main YOLO detection loop for Raspberry Pi
-# ─────────────────────────────────────────────────────────────────────────────
-#
-#  Run:  python detect.py
-#
-#  What it does:
-#   1. Loads best.pt with Ultralytics YOLO
-#   2. Streams frames from camera, running inference on each
-#   3. For class 2 (paper)   → triggers paper dustbin lid open API
-#      For class 3 (plastic) → triggers plastic dustbin lid open API
-#   4. Starts fill-level poller (polls both dustbins every N seconds)
-#   5. Starts lid auto-close timer thread
-#   6. Starts Flask MJPEG stream server so ground-station can view feed
-#      at  http://<raspi-ip>:5000/
+# detect.py  –  Main entry: stream @ 30 FPS + YOLO in parallel
 # ─────────────────────────────────────────────────────────────────────────────
 
-import cv2
 import time
 import logging
-import numpy as np
+import threading
+
+import cv2
 from ultralytics import YOLO
 
 from config import (
-    MODEL_PATH, CONFIDENCE, LINE_WIDTH,
-    DETECT_CLASSES, CLASS_NAMES,
-    CAMERA_SOURCE, CAMERA_TYPE, USB_CAMERA_INDEX,
-    MJPEG_QUALITY, ESP32_ENABLED,
+    MODEL_PATH, CLASS_NAMES, CAMERA_TYPE, USB_CAMERA_INDEX, ESP32_ENABLED,
+    STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ,
 )
-from camera import initialize_camera, reopen_camera
-from dustbin_api import (
-    on_detection,
-    LidAutoCloseThread,
-    FillLevelPoller,
-)
-from streamer import start_stream_server, push_frame, set_camera_status
+from dustbin_api import LidAutoCloseThread, FillLevelPoller
+from streamer import start_stream_server
+from pipeline import start_pipeline, CameraHolder
 
-# ── Logging setup ─────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(threadName)s] %(levelname)s  %(message)s",
@@ -44,132 +25,49 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-def annotate_frame(frame: np.ndarray, results) -> np.ndarray:
-    """
-    Draw bounding boxes + labels on the frame using OpenCV.
-    Uses YOLO's built-in .plot() for clean rendering.
-    """
-    return results[0].plot(line_width=LINE_WIDTH)
-
-
-def encode_jpeg(frame: np.ndarray) -> bytes:
-    """Encode an OpenCV BGR frame as JPEG bytes."""
-    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, MJPEG_QUALITY])
-    return bytes(buf) if ok else b""
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 def main():
     log.info("=" * 60)
     log.info("  Trash Detection – Raspberry Pi Node")
     log.info("  Classes monitored: %s", CLASS_NAMES)
+    log.info("  Stream %d FPS | YOLO %d FPS @ imgsz %d", STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ)
     log.info("=" * 60)
 
-    # 1. Load model
     log.info("Loading YOLO model: %s", MODEL_PATH)
     model = YOLO(MODEL_PATH)
-    log.info("Model loaded ✓")
+    log.info("Model loaded")
 
-    # 2. Start background services (ESP32 optional for streaming-only runs)
     if ESP32_ENABLED:
         LidAutoCloseThread().start()
         FillLevelPoller().start()
     else:
-        log.info("ESP32 disabled – stream and detection only (no lid/level API)")
+        log.info("ESP32 disabled – stream and detection only")
+
     start_stream_server()
 
-    # 3. Open camera
     if CAMERA_TYPE == "usb":
-        log.info("Camera: USB webcam (index %d)", USB_CAMERA_INDEX)
+        log.info("Camera: USB index %d", USB_CAMERA_INDEX)
     elif CAMERA_TYPE == "pi":
-        log.info("Camera: Pi Camera Module (Picamera2 / libcamera)")
+        log.info("Camera: Pi Camera Module")
     else:
-        log.info("Camera: auto (USB index %d, then Pi cam)", USB_CAMERA_INDEX)
-    cap = None
-    while cap is None:
-        cap = initialize_camera(CAMERA_SOURCE)
-        if cap is None:
-            msg = (
-                f"Cannot open camera (CAMERA_TYPE={CAMERA_TYPE}). "
-                "USB: v4l2-ctl --list-devices | Pi: libcamera-hello -t 2000"
-            )
-            set_camera_status(False, msg)
-            log.error("%s — retrying in 3s (dashboard stays up)…", msg)
-            time.sleep(3)
-        else:
-            set_camera_status(True, None)
+        log.info("Camera: auto (USB #%d then Pi cam)", USB_CAMERA_INDEX)
 
-    log.info("Camera opened — starting detection loop…")
-    log.info("Ground-station stream → http://0.0.0.0:5000/")
+    stop = threading.Event()
+    holder, capture, inference = start_pipeline(model, stop)
 
-    fail_streak = 0
+    log.info("Dashboard → http://0.0.0.0:5000/")
+
     try:
-        while True:
-            ret, frame = cap.read()
-            if not ret or frame is None or frame.size == 0:
-                fail_streak += 1
-                if fail_streak == 1 or fail_streak % 10 == 0:
-                    log.warning(
-                        "Frame grab failed (%d consecutive) – retrying…",
-                        fail_streak,
-                    )
-                if fail_streak >= 50:
-                    set_camera_status(False, "Camera stalled — reconnecting…")
-                    new_cap = reopen_camera(cap)
-                    if new_cap is not None:
-                        cap = new_cap
-                        fail_streak = 0
-                        set_camera_status(True, None)
-                        log.info("Camera reopened")
-                    else:
-                        set_camera_status(False, "Could not reopen camera")
-                        log.error("Could not reopen camera")
-                time.sleep(0.05)
-                continue
-            fail_streak = 0
-            set_camera_status(True, None)
-
-            # Push raw frame immediately so the dashboard updates while YOLO runs
-            push_frame(encode_jpeg(frame))
-
-            # 4. Run YOLO inference
-            results = model.predict(
-                source=frame,
-                conf=CONFIDENCE,
-                classes=DETECT_CLASSES,
-                line_width=LINE_WIDTH,
-                verbose=False,
-            )
-
-            # 5. Process detections → trigger dustbin API
-            if results and results[0].boxes is not None:
-                for box in results[0].boxes:
-                    cls_id = int(box.cls[0].item())
-                    conf   = float(box.conf[0].item())
-                    log.info(
-                        "🗑️  Detected: class %d (%s)  conf=%.2f",
-                        cls_id, CLASS_NAMES.get(cls_id, "?"), conf,
-                    )
-                    on_detection(cls_id)
-
-            # 6. Annotate frame and push to MJPEG stream
-            annotated = annotate_frame(frame, results)
-            push_frame(encode_jpeg(annotated))
-
-            # Optional: show local window on raspi (comment out if headless)
-            # cv2.imshow("Trash Detection", annotated)
-            # if cv2.waitKey(1) & 0xFF == ord('q'):
-            #     break
-
+        while not stop.is_set():
+            time.sleep(1)
     except KeyboardInterrupt:
-        log.info("Interrupted by user – shutting down.")
+        log.info("Shutting down…")
+        stop.set()
+        time.sleep(0.3)
     finally:
-        cap.release()
+        holder.release()
         cv2.destroyAllWindows()
-        log.info("Camera released. Bye!")
+        log.info("Bye!")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     main()

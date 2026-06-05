@@ -24,6 +24,7 @@ except ImportError:
 from config import (
     STREAM_HOST, STREAM_PORT, MJPEG_QUALITY, MJPEG_MAX_FPS, ESP32_ENABLED,
     CAMERA_TYPE, USB_CAMERA_INDEX, CAMERA_WIDTH, CAMERA_HEIGHT,
+    STREAM_FPS, INFERENCE_FPS,
 )
 from dustbin_api import dustbin_state, _lock
 
@@ -78,6 +79,8 @@ def _stream_status() -> dict:
             "active": active,
             "last_frame_age_sec": round(age, 2) if age is not None else None,
             "fps": round(_fps, 1),
+            "target_fps": STREAM_FPS,
+            "inference_fps": INFERENCE_FPS,
             "frame_count": _total_frames,
             "error": _camera_error,
             "mjpeg": True,

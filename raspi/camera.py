@@ -19,6 +19,7 @@ from config import (
     CAMERA_WIDTH,
     CAMERA_HEIGHT,
     CAMERA_WARMUP_FRAMES,
+    STREAM_FPS,
 )
 
 log = logging.getLogger(__name__)
@@ -56,6 +57,10 @@ def _configure_capture(cap: cv2.VideoCapture) -> None:
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
     try:
+        cap.set(cv2.CAP_PROP_FPS, STREAM_FPS)
+    except Exception:
+        pass
+    try:
         cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     except Exception:
         pass
@@ -91,9 +96,10 @@ class Picamera2Capture:
             )
 
         self._picam = Picamera2()
-        # video_configuration works headless; preview needs a display
+        frame_us = int(1_000_000 / max(STREAM_FPS, 1))
         cfg = self._picam.create_video_configuration(
-            main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"}
+            main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"},
+            controls={"FrameDurationLimits": (frame_us, frame_us)},
         )
         self._picam.configure(cfg)
         self._picam.start()
