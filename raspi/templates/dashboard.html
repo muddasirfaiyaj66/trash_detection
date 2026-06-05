@@ -3,338 +3,278 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#0a0c10">
-<title>Trash Detection – Ground Station</title>
+<meta name="theme-color" content="#070a12">
+<title>Trash Detection · Ground Station</title>
 <style>
   :root {
-    --bg: #0a0c10;
-    --surface: #12151c;
-    --card: #1a1f2b;
+    --bg: #070a12;
+    --bg2: #0b1020;
+    --surface: rgba(20,26,40,.72);
+    --card: rgba(26,33,51,.66);
     --border: rgba(255,255,255,.09);
-    --text: #f1f5f9;
-    --muted: #94a3b8;
+    --border-strong: rgba(255,255,255,.16);
+    --text: #eef2ff;
+    --muted: #93a0bd;
     --blue: #3b82f6;
     --green: #22c55e;
     --amber: #f59e0b;
     --red: #ef4444;
-    --radius: 16px;
-    --header-h: 56px;
+    --slate: #64748b;
+    --radius: 18px;
   }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { -webkit-text-size-adjust: 100%; }
   body {
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    background: var(--bg);
+    font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     color: var(--text);
     line-height: 1.5;
     min-height: 100dvh;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(59,130,246,.16), transparent 60%),
+      radial-gradient(900px 500px at -10% 20%, rgba(34,197,94,.12), transparent 55%),
+      linear-gradient(160deg, var(--bg), var(--bg2));
+    background-attachment: fixed;
   }
 
+  /* ── Header ── */
   .header {
     position: sticky; top: 0; z-index: 100;
-    height: var(--header-h);
-    display: flex; align-items: center; gap: 10px;
-    padding: 0 16px;
-    background: rgba(10,12,16,.94);
-    backdrop-filter: blur(12px);
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 18px;
+    background: rgba(7,10,18,.72);
+    backdrop-filter: blur(16px);
     border-bottom: 1px solid var(--border);
   }
-  .header h1 {
-    font-size: clamp(0.95rem, 3.5vw, 1.15rem);
-    font-weight: 700; flex: 1;
+  .logo {
+    width: 38px; height: 38px; flex-shrink: 0;
+    display: grid; place-items: center;
+    font-size: 1.2rem;
+    border-radius: 12px;
+    background: linear-gradient(145deg, #1d4ed8, #16a34a);
+    box-shadow: 0 6px 20px rgba(34,197,94,.3);
+  }
+  .title-wrap { flex: 1; min-width: 0; }
+  .title-wrap h1 {
+    font-size: clamp(1rem, 3.5vw, 1.25rem); font-weight: 800;
+    letter-spacing: -.02em;
+    background: linear-gradient(90deg, #fff, #9ec5ff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
+  .title-wrap p { font-size: .72rem; color: var(--muted); }
   .pill {
-    font-size: 0.7rem; font-weight: 600;
-    padding: 4px 10px; border-radius: 999px;
-    border: 1px solid var(--border);
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.72rem; font-weight: 700;
+    padding: 6px 12px; border-radius: 999px;
+    border: 1px solid var(--border); white-space: nowrap;
   }
-  .pill.live { color: var(--green); border-color: rgba(34,197,94,.4); background: rgba(34,197,94,.12); }
-  .pill.wait { color: var(--amber); border-color: rgba(245,158,11,.4); background: rgba(245,158,11,.12); }
-  .pill.off { color: var(--red); border-color: rgba(239,68,68,.4); background: rgba(239,68,68,.12); }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .pill .dot { animation: blink 1.4s ease infinite; }
+  @keyframes blink { 50% { opacity: .25; } }
+  .pill.live { color: var(--green); border-color: rgba(34,197,94,.45); background: rgba(34,197,94,.12); }
+  .pill.wait { color: var(--amber); border-color: rgba(245,158,11,.45); background: rgba(245,158,11,.12); }
+  .pill.off  { color: var(--red);  border-color: rgba(239,68,68,.45); background: rgba(239,68,68,.12); }
 
+  /* ── Layout ── */
   .layout {
     display: grid; grid-template-columns: 1fr;
-    gap: 16px; padding: 16px;
-    max-width: 1400px; margin: 0 auto;
+    gap: 18px; padding: 18px;
+    max-width: 1480px; margin: 0 auto;
   }
-  @media (min-width: 960px) {
-    .layout { grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); align-items: start; }
+  @media (min-width: 980px) {
+    .layout { grid-template-columns: minmax(0,1fr) minmax(330px,400px); align-items: start; }
   }
 
-  /* ── Video panel ── */
-  .video-panel {
+  .panel {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
+    backdrop-filter: blur(14px);
+    box-shadow: 0 18px 50px rgba(0,0,0,.35);
     overflow: hidden;
   }
-  .video-panel:fullscreen {
-    border-radius: 0; border: none;
-    display: flex; flex-direction: column;
-    background: #000;
-  }
-  .video-panel:fullscreen .video-wrap { flex: 1; aspect-ratio: unset; }
-  .video-panel:fullscreen .video-toolbar,
-  .video-panel:fullscreen .stream-meta { flex-shrink: 0; }
 
+  /* ── Video ── */
+  .video-panel:fullscreen { border-radius: 0; border: none; display: flex; flex-direction: column; background: #000; }
+  .video-panel:fullscreen .video-wrap { flex: 1; aspect-ratio: unset; }
   .video-toolbar {
     display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--border);
+    padding: 12px 14px; border-bottom: 1px solid var(--border);
     font-size: 0.78rem; color: var(--muted);
   }
   .video-toolbar strong { color: var(--text); }
   .toolbar-actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
   .btn {
     font-size: 0.75rem; font-weight: 600;
-    padding: 7px 12px; border-radius: 8px;
+    padding: 8px 13px; border-radius: 10px;
     border: 1px solid var(--border);
-    background: var(--card); color: var(--text);
-    cursor: pointer; transition: background .15s;
+    background: rgba(255,255,255,.04); color: var(--text);
+    cursor: pointer; transition: all .15s; white-space: nowrap;
   }
-  .btn:hover { background: #252b3a; }
-  .btn.primary { background: rgba(59,130,246,.2); border-color: rgba(59,130,246,.45); color: #93c5fd; }
+  .btn:hover { background: rgba(255,255,255,.1); border-color: var(--border-strong); transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn.primary { background: linear-gradient(145deg, rgba(59,130,246,.35), rgba(37,99,235,.25)); border-color: rgba(59,130,246,.5); color: #bfdbfe; }
 
-  .cam-switch {
-    display: inline-flex;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    overflow: hidden;
-  }
+  .cam-switch { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
   .seg {
-    font-size: 0.75rem; font-weight: 600;
-    padding: 7px 12px; border: none;
-    background: var(--card); color: var(--muted);
-    cursor: pointer; transition: background .15s, color .15s;
+    font-size: 0.75rem; font-weight: 700; padding: 8px 13px; border: none;
+    background: rgba(255,255,255,.03); color: var(--muted);
+    cursor: pointer; transition: all .15s;
   }
   .seg + .seg { border-left: 1px solid var(--border); }
-  .seg:hover { background: #252b3a; }
-  .seg.active { background: rgba(34,197,94,.18); color: var(--green); }
+  .seg:hover { background: rgba(255,255,255,.08); color: var(--text); }
+  .seg.active { background: linear-gradient(145deg, rgba(34,197,94,.28), rgba(22,163,74,.18)); color: #86efac; }
   .seg:disabled { opacity: .55; cursor: progress; }
 
-  .video-wrap {
-    position: relative; width: 100%;
-    aspect-ratio: 16 / 9;
-    background: #000;
-  }
-  .video-wrap img {
-    width: 100%; height: 100%;
-    object-fit: contain;
-    display: block;
-    background: #080a0e;
-  }
+  .video-wrap { position: relative; width: 100%; aspect-ratio: 16/9; background: #05070d; }
+  .video-wrap img { width: 100%; height: 100%; object-fit: contain; display: block; }
   .video-wrap.fit-cover img { object-fit: cover; }
-
+  .scanline {
+    position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(rgba(255,255,255,0) 60%, rgba(59,130,246,.04));
+    background-size: 100% 4px; opacity: .5; mix-blend-mode: overlay;
+  }
+  .rec {
+    position: absolute; top: 12px; left: 12px;
+    display: flex; align-items: center; gap: 6px;
+    font-size: .68rem; font-weight: 700; letter-spacing: .08em;
+    padding: 5px 10px; border-radius: 8px;
+    background: rgba(0,0,0,.55); backdrop-filter: blur(6px);
+    color: #fca5a5; border: 1px solid rgba(239,68,68,.35);
+  }
+  .rec .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); animation: blink 1.2s infinite; }
   .video-overlay {
     position: absolute; inset: 0;
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 10px;
-    padding: 24px; text-align: center;
-    background: rgba(10,12,16,.88);
-    pointer-events: none;
-    transition: opacity .25s;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; padding: 24px; text-align: center;
+    background: rgba(7,10,18,.9); transition: opacity .25s;
   }
   .video-overlay.hidden { opacity: 0; visibility: hidden; }
-  .spinner {
-    width: 36px; height: 36px;
-    border: 3px solid var(--border);
-    border-top-color: var(--green);
-    border-radius: 50%;
-    animation: spin .8s linear infinite;
-  }
+  .video-overlay h2 { font-size: 1.05rem; font-weight: 700; }
+  .video-overlay p { font-size: .85rem; color: var(--muted); max-width: 340px; }
+  .spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--green); border-radius: 50%; animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  .stream-meta {
-    display: flex; flex-wrap: wrap; gap: 14px;
-    padding: 10px 12px;
+  .stream-meta { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--border); }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
     font-size: 0.72rem; color: var(--muted);
-    border-top: 1px solid var(--border);
+    padding: 6px 10px; border-radius: 9px;
+    background: rgba(255,255,255,.04); border: 1px solid var(--border);
   }
-  .stream-meta b { color: var(--text); }
+  .chip b { color: var(--text); font-variant-numeric: tabular-nums; }
 
   /* ── Sidebar ── */
-  .sidebar { display: flex; flex-direction: column; gap: 16px; }
-  .card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 16px;
-  }
-  .card-h {
-    font-size: 0.68rem; font-weight: 700;
-    letter-spacing: .07em; text-transform: uppercase;
-    color: var(--muted); margin-bottom: 16px;
-  }
+  .sidebar { display: flex; flex-direction: column; gap: 18px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); backdrop-filter: blur(14px); padding: 18px; box-shadow: 0 18px 50px rgba(0,0,0,.3); }
+  .card-h { display: flex; align-items: center; gap: 8px; font-size: 0.7rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); margin-bottom: 16px; }
+  .card-h::before { content: ''; width: 4px; height: 14px; border-radius: 2px; background: linear-gradient(var(--blue), var(--green)); }
 
-  .bins-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 16px;
-  }
-  @media (min-width: 520px) {
-    .bins-grid { grid-template-columns: 1fr 1fr; }
-  }
-  @media (min-width: 960px) {
-    .bins-grid { grid-template-columns: 1fr; }
-  }
+  .bins-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
 
   .bin-card {
-    padding: 14px;
-    border-radius: 14px;
-    background: linear-gradient(160deg, rgba(255,255,255,.04), rgba(0,0,0,.2));
-    border: 1px solid var(--border);
+    --accent: var(--slate);
+    position: relative;
+    padding: 16px;
+    border-radius: 16px;
+    background:
+      radial-gradient(120% 80% at 50% 0%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 70%),
+      linear-gradient(165deg, rgba(255,255,255,.05), rgba(0,0,0,.18));
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent),
+                0 14px 36px color-mix(in srgb, var(--accent) 14%, transparent);
+    transition: border-color .5s, box-shadow .5s, background .5s;
   }
-  .bin-head {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 12px;
-  }
+  .bin-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
   .bin-head-left { display: flex; align-items: center; gap: 10px; }
-  .bin-icon { font-size: 1.4rem; }
-  .bin-title { font-weight: 700; font-size: 0.95rem; }
-  .bin-lid {
-    font-size: 0.72rem; font-weight: 600;
-    padding: 3px 8px; border-radius: 6px;
-    background: rgba(255,255,255,.06); color: var(--muted);
-  }
-  .bin-lid.open { background: rgba(34,197,94,.15); color: var(--green); }
+  .bin-emoji { width: 36px; height: 36px; display: grid; place-items: center; font-size: 1.25rem; border-radius: 10px; background: rgba(255,255,255,.06); border: 1px solid var(--border); }
+  .bin-title { font-weight: 800; font-size: 1rem; letter-spacing: -.01em; }
+  .bin-sub { font-size: .68rem; color: var(--muted); }
+  .bin-lid { font-size: 0.7rem; font-weight: 700; padding: 5px 10px; border-radius: 999px; background: rgba(255,255,255,.06); color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+  .bin-lid::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .bin-lid.open { background: rgba(34,197,94,.18); color: #86efac; }
 
-  /* ── Tank fill gauge ── */
-  .tank-wrap {
-    display: flex; align-items: flex-end; justify-content: center;
-    gap: 12px; margin-bottom: 12px;
-  }
-  .tank {
-    position: relative;
-    width: 72px; height: 130px;
-    flex-shrink: 0;
-  }
-  .tank-cap {
-    width: 36px; height: 10px;
-    margin: 0 auto 2px;
-    background: linear-gradient(180deg, #64748b, #475569);
-    border-radius: 4px 4px 0 0;
-    transition: transform .3s;
-  }
-  .tank.lid-open .tank-cap { transform: rotate(-28deg) translateX(-6px); transform-origin: bottom right; }
+  .gauge-row { display: flex; align-items: center; gap: 16px; }
+
+  /* Tank */
+  .tank { position: relative; width: 78px; flex-shrink: 0; }
+  .tank-cap { width: 40px; height: 11px; margin: 0 auto 2px; background: linear-gradient(180deg,#94a3b8,#475569); border-radius: 5px 5px 0 0; transition: transform .4s cubic-bezier(.34,1.56,.64,1); transform-origin: bottom right; }
+  .tank.lid-open .tank-cap { transform: rotate(-32deg) translateX(-5px); }
   .tank-body {
-    position: relative;
-    width: 100%; height: 118px;
-    border: 3px solid rgba(148,163,184,.35);
-    border-radius: 8px 8px 14px 14px;
-    background: linear-gradient(90deg, rgba(0,0,0,.5), rgba(255,255,255,.03), rgba(0,0,0,.4));
-    overflow: hidden;
-    box-shadow: inset 0 0 20px rgba(0,0,0,.5);
+    position: relative; width: 100%; height: 128px;
+    border: 3px solid color-mix(in srgb, var(--accent) 45%, rgba(148,163,184,.4));
+    border-radius: 10px 10px 16px 16px;
+    background: linear-gradient(90deg, rgba(0,0,0,.55), rgba(255,255,255,.04) 45%, rgba(0,0,0,.5));
+    overflow: hidden; box-shadow: inset 0 0 22px rgba(0,0,0,.55);
+    transition: border-color .5s;
   }
-  .tank-body::before {
-    content: '';
-    position: absolute; top: 8px; left: 6px;
-    width: 8px; height: 70%;
-    background: linear-gradient(180deg, rgba(255,255,255,.12), transparent);
-    border-radius: 4px; z-index: 2; pointer-events: none;
-  }
-  .tank-liquid {
-    position: absolute; bottom: 0; left: 0; right: 0;
-    height: 0%;
-    transition: height .8s cubic-bezier(.4, 0, .2, 1);
-    overflow: hidden;
-  }
-  .tank-liquid-inner {
-    position: absolute; inset: 0;
-    opacity: .92;
-  }
-  .tank-wave {
-    position: absolute; top: -8px; left: -50%;
-    width: 200%; height: 16px;
-    background: rgba(255,255,255,.25);
-    border-radius: 45%;
-    animation: wave 3s linear infinite;
-  }
-  .tank-wave.w2 { animation-duration: 4s; animation-delay: -1.5s; opacity: .5; top: -6px; }
-  @keyframes wave {
-    0% { transform: translateX(0) rotate(0deg); }
-    100% { transform: translateX(25%) rotate(360deg); }
-  }
-  .tank-bubbles {
-    position: absolute; inset: 0; pointer-events: none;
-  }
-  .tank-bubbles span {
-    position: absolute; bottom: 10%;
-    width: 4px; height: 4px; border-radius: 50%;
-    background: rgba(255,255,255,.35);
-    animation: bubble 2.5s ease-in infinite;
-  }
-  .tank-bubbles span:nth-child(1) { left: 20%; animation-delay: 0s; }
-  .tank-bubbles span:nth-child(2) { left: 55%; animation-delay: .8s; width: 3px; height: 3px; }
-  .tank-bubbles span:nth-child(3) { left: 75%; animation-delay: 1.4s; }
-  @keyframes bubble {
-    0% { transform: translateY(0); opacity: 0; }
-    20% { opacity: .8; }
-    100% { transform: translateY(-80px); opacity: 0; }
-  }
+  .tank-ticks { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+  .tank-ticks i { position: absolute; right: 0; width: 8px; height: 1px; background: rgba(255,255,255,.18); }
+  .tank-ticks i:nth-child(1){ top: 25%; } .tank-ticks i:nth-child(2){ top: 50%; width: 12px; } .tank-ticks i:nth-child(3){ top: 75%; }
+  .tank-body::before { content: ''; position: absolute; top: 8px; left: 7px; width: 9px; height: 70%; background: linear-gradient(180deg, rgba(255,255,255,.16), transparent); border-radius: 5px; z-index: 2; }
+  .tank-liquid { position: absolute; bottom: 0; left: 0; right: 0; height: 0%; transition: height .9s cubic-bezier(.4,0,.2,1); overflow: hidden; }
+  .tank-liquid-inner { position: absolute; inset: 0; background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 85%, white), var(--accent)); box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 60%, transparent); transition: background .5s; }
+  .tank-wave { position: absolute; top: -8px; left: -50%; width: 200%; height: 16px; background: rgba(255,255,255,.28); border-radius: 45%; animation: wave 3s linear infinite; }
+  .tank-wave.w2 { animation-duration: 4.5s; animation-delay: -1.5s; opacity: .45; top: -6px; }
+  @keyframes wave { 0% { transform: translateX(0) rotate(0); } 100% { transform: translateX(25%) rotate(360deg); } }
+  .tank-bubbles span { position: absolute; bottom: 8%; width: 4px; height: 4px; border-radius: 50%; background: rgba(255,255,255,.4); animation: bubble 2.6s ease-in infinite; }
+  .tank-bubbles span:nth-child(1){ left: 22%; } .tank-bubbles span:nth-child(2){ left: 52%; width: 3px; height: 3px; animation-delay: .9s; } .tank-bubbles span:nth-child(3){ left: 76%; animation-delay: 1.5s; }
+  @keyframes bubble { 0% { transform: translateY(0); opacity: 0; } 20% { opacity: .8; } 100% { transform: translateY(-90px); opacity: 0; } }
 
-  .tank-stats { flex: 1; min-width: 0; }
-  .tank-pct {
-    font-size: 1.75rem; font-weight: 800;
-    line-height: 1; letter-spacing: -.02em;
-  }
-  .tank-status {
-    display: inline-block;
-    margin-top: 6px;
-    font-size: 0.72rem; font-weight: 700;
-    text-transform: uppercase; letter-spacing: .05em;
-    padding: 4px 10px; border-radius: 999px;
-  }
-  .tank-status.empty { background: rgba(148,163,184,.15); color: var(--muted); }
-  .tank-status.low { background: rgba(34,197,94,.15); color: var(--green); }
-  .tank-status.medium { background: rgba(59,130,246,.15); color: var(--blue); }
-  .tank-status.high { background: rgba(245,158,11,.15); color: var(--amber); }
-  .tank-status.full { background: rgba(239,68,68,.2); color: var(--red); animation: pulse-full 1.5s ease infinite; }
-  @keyframes pulse-full {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,.3); }
-    50% { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
-  }
-  .tank-scale {
-    margin-top: 10px;
-    display: flex; flex-direction: column; gap: 3px;
-    font-size: 0.62rem; color: var(--muted);
-  }
-  .tank-scale span { display: flex; justify-content: space-between; }
+  .gauge-stats { flex: 1; min-width: 0; }
+  .gauge-pct { font-size: 2.3rem; font-weight: 800; line-height: 1; letter-spacing: -.03em; color: var(--accent); font-variant-numeric: tabular-nums; transition: color .5s; }
+  .gauge-pct small { font-size: 1rem; font-weight: 700; opacity: .7; }
+  .status-badge { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; padding: 5px 11px; border-radius: 999px; color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); transition: all .5s; }
+  .status-badge.is-full { animation: pulseFull 1.3s ease infinite; }
+  @keyframes pulseFull { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,.4); } 50% { box-shadow: 0 0 0 7px rgba(239,68,68,0); } }
+  .gauge-track { margin-top: 12px; height: 7px; border-radius: 999px; background: rgba(255,255,255,.08); overflow: hidden; }
+  .gauge-bar { height: 100%; width: 0%; border-radius: 999px; background: var(--accent); transition: width .9s cubic-bezier(.4,0,.2,1), background .5s; }
 
-  .sliders { margin-top: 12px; display: flex; flex-direction: column; gap: 12px; }
-  .slider-row label {
-    display: flex; justify-content: space-between;
-    font-size: 0.75rem; font-weight: 600; color: var(--muted); margin-bottom: 4px;
-  }
-  .slider-row label span { color: var(--text); }
-  input[type="range"] { width: 100%; height: 28px; accent-color: var(--blue); cursor: pointer; }
+  .level-legend { display: flex; gap: 4px; margin-top: 18px; }
+  .level-legend .seg-l { flex: 1; text-align: center; font-size: .56rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 6px 2px; border-radius: 7px; border: 1px solid var(--border); transition: all .4s; }
+  .level-legend .seg-l.on { color: #fff; border-color: transparent; }
+  .seg-l[data-l="empty"].on { background: var(--slate); }
+  .seg-l[data-l="low"].on { background: var(--green); }
+  .seg-l[data-l="medium"].on { background: var(--blue); }
+  .seg-l[data-l="high"].on { background: var(--amber); }
+  .seg-l[data-l="full"].on { background: var(--red); }
 
-  .log {
-    font-family: ui-monospace, monospace;
-    font-size: 0.7rem; max-height: 180px;
-    overflow-y: auto; padding: 10px;
-    background: rgba(0,0,0,.35);
-    border-radius: 10px; border: 1px solid var(--border);
-    display: flex; flex-direction: column-reverse; gap: 4px;
-  }
-  .log .open { color: var(--green); }
-  .log .close { color: var(--amber); }
-  .log .level { color: var(--blue); }
+  .sliders { margin-top: 16px; display: flex; flex-direction: column; gap: 13px; }
+  .slider-row label { display: flex; justify-content: space-between; font-size: 0.74rem; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+  .slider-row label b { color: var(--text); font-variant-numeric: tabular-nums; }
+  input[type="range"] { width: 100%; height: 26px; cursor: pointer; -webkit-appearance: none; background: transparent; }
+  input[type="range"]::-webkit-slider-runnable-track { height: 6px; border-radius: 999px; background: rgba(255,255,255,.12); }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; margin-top: -6px; width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 3px solid var(--blue); box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+  input[type="range"]::-moz-range-track { height: 6px; border-radius: 999px; background: rgba(255,255,255,.12); }
+  input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 3px solid var(--blue); }
 
-  .legend { display: flex; flex-direction: column; gap: 8px; font-size: 0.82rem; }
-  .legend-item { display: flex; align-items: center; gap: 8px; }
-  .swatch { width: 10px; height: 10px; border-radius: 3px; }
+  .log { font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.7rem; max-height: 190px; overflow-y: auto; padding: 4px; display: flex; flex-direction: column-reverse; gap: 2px; }
+  .log div { padding: 5px 8px; border-radius: 7px; background: rgba(255,255,255,.02); }
+  .log .open { color: #86efac; background: rgba(34,197,94,.08); }
+  .log .close { color: #fcd34d; background: rgba(245,158,11,.08); }
+  .log .level { color: #93c5fd; background: rgba(59,130,246,.08); }
+
+  .legend { display: flex; flex-direction: column; gap: 10px; font-size: 0.84rem; }
+  .legend-item { display: flex; align-items: center; gap: 10px; }
+  .swatch { width: 12px; height: 12px; border-radius: 4px; flex-shrink: 0; }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 8px; }
 </style>
 </head>
 <body>
 
 <header class="header">
-  <span aria-hidden="true">🗑️</span>
-  <h1>Trash Detection</h1>
-  <span id="stream-pill" class="pill wait">Connecting</span>
+  <div class="logo">🗑️</div>
+  <div class="title-wrap">
+    <h1>Trash Detection</h1>
+    <p>Smart Dustbin · Ground Station</p>
+  </div>
+  <span id="stream-pill" class="pill wait"><span class="dot"></span>Connecting</span>
 </header>
 
 <main class="layout">
-  <section class="video-panel" id="video-panel">
+  <section class="panel video-panel" id="video-panel">
     <div class="video-toolbar">
       <span>Camera: <strong id="cam-type">—</strong></span>
       <div class="cam-switch" role="group" aria-label="Camera mode">
@@ -349,6 +289,8 @@
     </div>
     <div class="video-wrap" id="video-wrap">
       <img id="feed" alt="Live detection feed">
+      <div class="scanline"></div>
+      <div class="rec"><span class="dot"></span>LIVE</div>
       <div id="overlay" class="video-overlay">
         <div class="spinner"></div>
         <h2 id="overlay-title">Waiting for camera</h2>
@@ -356,31 +298,35 @@
       </div>
     </div>
     <div class="stream-meta">
-      <span>Stream: <b id="meta-fps">0 / 30</b> FPS</span>
-      <span>Frames: <b id="meta-frames">0</b></span>
-      <span>Updated: <b id="meta-age">—</b></span>
+      <span class="chip">⚡ <b id="meta-fps">0 / 30</b> FPS</span>
+      <span class="chip">🎞️ <b id="meta-frames">0</b> frames</span>
+      <span class="chip">⏱️ <b id="meta-age">—</b></span>
     </div>
   </section>
 
   <aside class="sidebar">
     <div class="card">
-      <div class="card-h">Dustbin fill level</div>
+      <div class="card-h">Dustbin Fill Levels</div>
       <div class="bins-grid">
         <!-- Paper -->
         <div class="bin-card" id="bin-paper">
           <div class="bin-head">
             <div class="bin-head-left">
-              <span class="bin-icon">📄</span>
-              <span class="bin-title">Paper</span>
+              <div class="bin-emoji">📄</div>
+              <div>
+                <div class="bin-title">Paper</div>
+                <div class="bin-sub">Class 2</div>
+              </div>
             </div>
             <span class="bin-lid" id="paper-lid">Closed</span>
           </div>
-          <div class="tank-wrap">
+          <div class="gauge-row">
             <div class="tank" id="paper-tank">
               <div class="tank-cap"></div>
               <div class="tank-body">
+                <div class="tank-ticks"><i></i><i></i><i></i></div>
                 <div class="tank-liquid" id="paper-liquid" style="height:0%">
-                  <div class="tank-liquid-inner" id="paper-liquid-color" style="background:linear-gradient(180deg,#60a5fa,#2563eb)">
+                  <div class="tank-liquid-inner" id="paper-liquid-color">
                     <div class="tank-wave"></div>
                     <div class="tank-wave w2"></div>
                     <div class="tank-bubbles"><span></span><span></span><span></span></div>
@@ -388,23 +334,26 @@
                 </div>
               </div>
             </div>
-            <div class="tank-stats">
-              <div class="tank-pct" id="paper-level">0%</div>
-              <span class="tank-status empty" id="paper-status">Empty</span>
-              <div class="tank-scale">
-                <span><em>Full</em><em>100%</em></span>
-                <span><em>Half</em><em>50%</em></span>
-                <span><em>Empty</em><em>0%</em></span>
-              </div>
+            <div class="gauge-stats">
+              <div class="gauge-pct" id="paper-level">0<small>%</small></div>
+              <span class="status-badge" id="paper-status">Empty</span>
+              <div class="gauge-track"><div class="gauge-bar" id="paper-bar"></div></div>
             </div>
+          </div>
+          <div class="level-legend" id="paper-legend">
+            <div class="seg-l" data-l="empty">Empty</div>
+            <div class="seg-l" data-l="low">Low</div>
+            <div class="seg-l" data-l="medium">Med</div>
+            <div class="seg-l" data-l="high">High</div>
+            <div class="seg-l" data-l="full">Full</div>
           </div>
           <div class="sliders">
             <div class="slider-row">
-              <label>Open lid <span><span id="paper-open-val">90</span>°</span></label>
+              <label>Open lid <b><span id="paper-open-val">90</span>°</b></label>
               <input type="range" id="paper-open-input" min="0" max="180" value="90">
             </div>
             <div class="slider-row">
-              <label>Close lid <span><span id="paper-close-val">0</span>°</span></label>
+              <label>Close lid <b><span id="paper-close-val">0</span>°</b></label>
               <input type="range" id="paper-close-input" min="0" max="180" value="0">
             </div>
           </div>
@@ -413,17 +362,21 @@
         <div class="bin-card" id="bin-plastic">
           <div class="bin-head">
             <div class="bin-head-left">
-              <span class="bin-icon">🧴</span>
-              <span class="bin-title">Plastic</span>
+              <div class="bin-emoji">🧴</div>
+              <div>
+                <div class="bin-title">Plastic</div>
+                <div class="bin-sub">Class 3</div>
+              </div>
             </div>
             <span class="bin-lid" id="plastic-lid">Closed</span>
           </div>
-          <div class="tank-wrap">
+          <div class="gauge-row">
             <div class="tank" id="plastic-tank">
               <div class="tank-cap"></div>
               <div class="tank-body">
+                <div class="tank-ticks"><i></i><i></i><i></i></div>
                 <div class="tank-liquid" id="plastic-liquid" style="height:0%">
-                  <div class="tank-liquid-inner" id="plastic-liquid-color" style="background:linear-gradient(180deg,#4ade80,#16a34a)">
+                  <div class="tank-liquid-inner" id="plastic-liquid-color">
                     <div class="tank-wave"></div>
                     <div class="tank-wave w2"></div>
                     <div class="tank-bubbles"><span></span><span></span><span></span></div>
@@ -431,23 +384,26 @@
                 </div>
               </div>
             </div>
-            <div class="tank-stats">
-              <div class="tank-pct" id="plastic-level">0%</div>
-              <span class="tank-status empty" id="plastic-status">Empty</span>
-              <div class="tank-scale">
-                <span><em>Full</em><em>100%</em></span>
-                <span><em>Half</em><em>50%</em></span>
-                <span><em>Empty</em><em>0%</em></span>
-              </div>
+            <div class="gauge-stats">
+              <div class="gauge-pct" id="plastic-level">0<small>%</small></div>
+              <span class="status-badge" id="plastic-status">Empty</span>
+              <div class="gauge-track"><div class="gauge-bar" id="plastic-bar"></div></div>
             </div>
+          </div>
+          <div class="level-legend" id="plastic-legend">
+            <div class="seg-l" data-l="empty">Empty</div>
+            <div class="seg-l" data-l="low">Low</div>
+            <div class="seg-l" data-l="medium">Med</div>
+            <div class="seg-l" data-l="high">High</div>
+            <div class="seg-l" data-l="full">Full</div>
           </div>
           <div class="sliders">
             <div class="slider-row">
-              <label>Open lid <span><span id="plastic-open-val">90</span>°</span></label>
+              <label>Open lid <b><span id="plastic-open-val">90</span>°</b></label>
               <input type="range" id="plastic-open-input" min="0" max="180" value="90">
             </div>
             <div class="slider-row">
-              <label>Close lid <span><span id="plastic-close-val">0</span>°</span></label>
+              <label>Close lid <b><span id="plastic-close-val">0</span>°</b></label>
               <input type="range" id="plastic-close-input" min="0" max="180" value="0">
             </div>
           </div>
@@ -456,15 +412,15 @@
     </div>
 
     <div class="card">
-      <div class="card-h">Event log</div>
+      <div class="card-h">Event Log</div>
       <div class="log" id="log-box"><div>System ready</div></div>
     </div>
 
     <div class="card">
-      <div class="card-h">Detection</div>
+      <div class="card-h">Detection Classes</div>
       <div class="legend">
-        <div class="legend-item"><span class="swatch" style="background:var(--blue)"></span>Paper → paper bin</div>
-        <div class="legend-item"><span class="swatch" style="background:var(--green)"></span>Plastic → plastic bin</div>
+        <div class="legend-item"><span class="swatch" style="background:var(--blue)"></span>Paper → opens paper bin</div>
+        <div class="legend-item"><span class="swatch" style="background:var(--green)"></span>Plastic → opens plastic bin</div>
       </div>
     </div>
   </aside>
@@ -481,35 +437,48 @@ const streamPill = document.getElementById('stream-pill');
 const logBox = document.getElementById('log-box');
 const btnFs = document.getElementById('btn-fs');
 const btnFit = document.getElementById('btn-fit');
+const camPiBtn = document.getElementById('cam-pi');
+const camUsbBtn = document.getElementById('cam-usb');
 let prevState = { paper: {}, plastic: {} };
+let shownPct = { paper: 0, plastic: 0 };
 let fitContain = true;
+let switching = false;
 
-function reloadStream() {
-  feed.src = '/video_feed?ts=' + Date.now();
-  addLog('Stream reloaded');
+/* ── Level → color mapping (single source of truth) ── */
+const LEVELS = {
+  empty:  { min: 0,  color: '#64748b', label: 'Empty' },
+  low:    { min: 10, color: '#22c55e', label: 'Low' },
+  medium: { min: 40, color: '#3b82f6', label: 'Medium' },
+  high:   { min: 70, color: '#f59e0b', label: 'High' },
+  full:   { min: 90, color: '#ef4444', label: 'Full' },
+};
+function levelFor(pct) {
+  if (pct >= 90) return 'full';
+  if (pct >= 70) return 'high';
+  if (pct >= 40) return 'medium';
+  if (pct >= 10) return 'low';
+  return 'empty';
 }
+
+/* ── Stream controls ── */
+function reloadStream() { feed.src = '/video_feed?ts=' + Date.now(); addLog('Stream reloaded'); }
 function toggleFit() {
   fitContain = !fitContain;
   videoWrap.classList.toggle('fit-cover', !fitContain);
   btnFit.textContent = fitContain ? 'Fit view' : 'Fill view';
 }
 function toggleFullscreen() {
-  if (!document.fullscreenElement) {
-    (videoPanel.requestFullscreen || videoPanel.webkitRequestFullscreen)?.call(videoPanel);
-  } else {
-    document.exitFullscreen();
-  }
+  if (!document.fullscreenElement) (videoPanel.requestFullscreen || videoPanel.webkitRequestFullscreen)?.call(videoPanel);
+  else document.exitFullscreen();
 }
-
-const camPiBtn = document.getElementById('cam-pi');
-const camUsbBtn = document.getElementById('cam-usb');
-let switching = false;
+document.addEventListener('fullscreenchange', () => {
+  btnFs.textContent = document.fullscreenElement ? '✕ Exit' : '⛶ Fullscreen';
+});
 
 function setCamButtons(type) {
   camPiBtn.classList.toggle('active', type === 'pi');
   camUsbBtn.classList.toggle('active', type === 'usb');
 }
-
 async function switchCamera(type) {
   if (switching) return;
   switching = true;
@@ -521,117 +490,99 @@ async function switchCamera(type) {
   overlayMsg.textContent = 'Starting ' + type.toUpperCase() + ' camera…';
   try {
     const r = await fetch('/camera/switch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type })
     });
-    if (r.ok) {
-      setCamButtons(type);
-      addLog(type.toUpperCase() + ' camera selected', 'open');
-      setTimeout(reloadStream, 1500);
-    } else {
-      const e = await r.json().catch(() => ({}));
-      addLog('Switch failed: ' + (e.error || r.status), 'close');
-    }
-  } catch {
-    addLog('Switch request failed', 'close');
-  } finally {
-    camPiBtn.disabled = camUsbBtn.disabled = false;
-    switching = false;
-  }
+    if (r.ok) { setCamButtons(type); addLog(type.toUpperCase() + ' camera selected', 'open'); setTimeout(reloadStream, 1500); }
+    else { const e = await r.json().catch(() => ({})); addLog('Switch failed: ' + (e.error || r.status), 'close'); }
+  } catch { addLog('Switch request failed', 'close'); }
+  finally { camPiBtn.disabled = camUsbBtn.disabled = false; switching = false; }
 }
-document.addEventListener('fullscreenchange', () => {
-  btnFs.textContent = document.fullscreenElement ? '✕ Exit' : '⛶ Fullscreen';
-});
 
 function setStreamPill(s) {
   streamPill.className = 'pill ' + s;
-  streamPill.textContent = { live: 'Live', wait: 'Connecting', off: 'Offline' }[s] || s;
+  const label = { live: 'Live', wait: 'Connecting', off: 'Offline' }[s] || s;
+  streamPill.innerHTML = '<span class="dot"></span>' + label;
 }
 function updateOverlay(stream) {
   const age = stream.last_frame_age_sec;
   const active = stream.active && age !== null && age < 4;
   if (active) { overlay.classList.add('hidden'); setStreamPill('live'); return; }
   overlay.classList.remove('hidden');
-  if (stream.error) {
-    setStreamPill('off');
-    overlayTitle.textContent = 'Camera offline';
-    overlayMsg.textContent = stream.error;
-  } else {
-    setStreamPill('wait');
-    overlayTitle.textContent = 'Waiting for stream';
-    overlayMsg.textContent = 'Run detect.py on the Pi.';
-  }
+  if (stream.error) { setStreamPill('off'); overlayTitle.textContent = 'Camera offline'; overlayMsg.textContent = stream.error; }
+  else { setStreamPill('wait'); overlayTitle.textContent = 'Waiting for stream'; overlayMsg.textContent = 'Run detect.py on the Pi.'; }
 }
-
 feed.onload = () => { if (feed.naturalWidth > 0) overlay.classList.add('hidden'); };
-feed.onerror = () => {
-  overlay.classList.remove('hidden');
-  setStreamPill('off');
-  overlayTitle.textContent = 'Stream error';
-  overlayMsg.textContent = 'Click Reload or restart detect.py.';
-};
-
+feed.onerror = () => { overlay.classList.remove('hidden'); setStreamPill('off'); overlayTitle.textContent = 'Stream error'; overlayMsg.textContent = 'Click Reload or restart detect.py.'; };
 reloadStream();
 
 function addLog(msg, type) {
   const el = document.createElement('div');
   if (type) el.className = type;
-  el.textContent = new Date().toLocaleTimeString() + ' ' + msg;
+  el.textContent = new Date().toLocaleTimeString() + '  ' + msg;
   logBox.prepend(el);
   while (logBox.children.length > 50) logBox.removeChild(logBox.lastChild);
 }
 
-function fillStatus(pct) {
-  if (pct >= 90) return { label: 'Full', cls: 'full' };
-  if (pct >= 70) return { label: 'High', cls: 'high' };
-  if (pct >= 40) return { label: 'Medium', cls: 'medium' };
-  if (pct >= 10) return { label: 'Low', cls: 'low' };
-  return { label: 'Empty', cls: 'empty' };
+/* ── Animated count-up for the percentage ── */
+function animatePct(bin, target) {
+  const el = document.getElementById(bin + '-level');
+  const from = shownPct[bin] || 0;
+  if (from === target) return;
+  const start = performance.now(), dur = 700;
+  function step(now) {
+    const t = Math.min((now - start) / dur, 1);
+    const val = Math.round(from + (target - from) * (1 - Math.pow(1 - t, 3)));
+    el.innerHTML = val + '<small>%</small>';
+    if (t < 1) requestAnimationFrame(step); else shownPct[bin] = target;
+  }
+  requestAnimationFrame(step);
 }
 
-function liquidGradient(pct) {
-  if (pct >= 90) return 'linear-gradient(180deg,#f87171,#dc2626)';
-  if (pct >= 60) return 'linear-gradient(180deg,#fbbf24,#d97706)';
-  if (pct >= 30) return 'linear-gradient(180deg,#60a5fa,#2563eb)';
-  return 'linear-gradient(180deg,#4ade80,#16a34a)';
+function applyLevelColor(bin, pct) {
+  const key = levelFor(pct);
+  const color = LEVELS[key].color;
+  const card = document.getElementById('bin-' + bin);
+  card.style.setProperty('--accent', color);
+
+  const badge = document.getElementById(bin + '-status');
+  badge.textContent = LEVELS[key].label;
+  badge.classList.toggle('is-full', key === 'full');
+
+  document.getElementById(bin + '-liquid').style.height = pct + '%';
+  document.getElementById(bin + '-bar').style.width = pct + '%';
+
+  document.querySelectorAll('#' + bin + '-legend .seg-l').forEach(s => {
+    s.classList.toggle('on', s.dataset.l === key);
+  });
 }
 
 function updateBins(data) {
   ['paper','plastic'].forEach(bin => {
     const s = data[bin];
-    const pct = s.level_pct ?? 0;
+    const pct = Math.max(0, Math.min(100, s.level_pct ?? 0));
     const isOpen = s.lid === 'open';
 
-    document.getElementById(bin + '-lid').textContent = isOpen ? 'Open' : 'Closed';
-    document.getElementById(bin + '-lid').className = 'bin-lid' + (isOpen ? ' open' : '');
+    const lid = document.getElementById(bin + '-lid');
+    lid.textContent = isOpen ? 'Open' : 'Closed';
+    lid.className = 'bin-lid' + (isOpen ? ' open' : '');
     document.getElementById(bin + '-tank').classList.toggle('lid-open', isOpen);
 
-    document.getElementById(bin + '-liquid').style.height = pct + '%';
-    document.getElementById(bin + '-level').textContent = pct + '%';
-    document.getElementById(bin + '-liquid-color').style.background = liquidGradient(pct);
+    applyLevelColor(bin, pct);
+    animatePct(bin, pct);
 
-    const st = fillStatus(pct);
-    const statusEl = document.getElementById(bin + '-status');
-    statusEl.textContent = st.label;
-    statusEl.className = 'tank-status ' + st.cls;
-
-    if (prevState[bin].lid !== undefined && prevState[bin].lid !== s.lid) {
+    if (prevState[bin].lid !== undefined && prevState[bin].lid !== s.lid)
       addLog(bin + ' lid ' + (isOpen ? 'opened' : 'closed'), isOpen ? 'open' : 'close');
-    }
-    if (prevState[bin].level_pct !== s.level_pct) {
-      addLog(bin + ' level → ' + pct + '% (' + st.label + ')', 'level');
-    }
+    if (prevState[bin].level_pct !== s.level_pct)
+      addLog(bin + ' level → ' + pct + '% (' + LEVELS[levelFor(pct)].label + ')', 'level');
 
     const oIn = document.getElementById(bin + '-open-input');
     const cIn = document.getElementById(bin + '-close-input');
     if (document.activeElement !== oIn && s.open_deg !== undefined) {
-      oIn.value = s.open_deg;
-      document.getElementById(bin + '-open-val').textContent = s.open_deg;
+      oIn.value = s.open_deg; document.getElementById(bin + '-open-val').textContent = s.open_deg;
     }
     if (document.activeElement !== cIn && s.close_deg !== undefined) {
-      cIn.value = s.close_deg;
-      document.getElementById(bin + '-close-val').textContent = s.close_deg;
+      cIn.value = s.close_deg; document.getElementById(bin + '-close-val').textContent = s.close_deg;
     }
     prevState[bin] = { ...s };
   });
@@ -652,8 +603,7 @@ async function poll() {
         (data.stream.fps || 0).toFixed(1) + ' / ' + (data.stream.target_fps || 30);
       document.getElementById('meta-frames').textContent = data.stream.frame_count || 0;
       const age = data.stream.last_frame_age_sec;
-      document.getElementById('meta-age').textContent =
-        age === null ? '—' : (age < 1 ? 'now' : age.toFixed(1) + 's');
+      document.getElementById('meta-age').textContent = age === null ? '—' : (age < 1 ? 'now' : age.toFixed(1) + 's');
       updateOverlay(data.stream);
     }
     updateBins(data);
@@ -667,8 +617,7 @@ async function sendAngle(bin) {
   document.getElementById(bin + '-close-val').textContent = closeVal;
   try {
     const r = await fetch('/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bin, open_deg: openVal, close_deg: closeVal })
     });
     addLog(r.ok ? bin + ' angles saved' : bin + ' config failed', r.ok ? 'level' : 'close');
