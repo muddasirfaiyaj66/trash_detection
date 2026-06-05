@@ -13,7 +13,7 @@ from ultralytics import YOLO
 from config import (
     CONFIDENCE, LINE_WIDTH, DETECT_CLASSES, CLASS_NAMES,
     MJPEG_QUALITY, STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ,
-    CAMERA_SOURCE,
+    CAMERA_SOURCE, CAMERA_REOPEN_THRESHOLD, MODEL_WARMUP, MODEL_WARMUP_TIMEOUT,
 )
 from camera import initialize_camera
 from dustbin_api import on_detection
@@ -121,6 +121,34 @@ def _extract_boxes(results) -> list:
     return boxes
 
 
+def _warmup_model(model: YOLO, hub: FrameHub) -> None:
+    if not MODEL_WARMUP:
+        return
+    log.info("Warming up YOLO on first frame...")
+    deadline = time.time() + MODEL_WARMUP_TIMEOUT
+    while time.time() < deadline:
+        frame = hub.snapshot()
+        if frame is None:
+            time.sleep(0.02)
+            continue
+        try:
+            results = model.predict(
+                source=frame,
+                conf=CONFIDENCE,
+                classes=DETECT_CLASSES,
+                imgsz=YOLO_IMGSZ,
+                verbose=False,
+            )
+            boxes = _extract_boxes(results)
+            if boxes:
+                hub.set_boxes(boxes)
+            log.info("YOLO warmup complete")
+        except Exception as e:
+            log.warning("YOLO warmup failed: %s", e)
+        return
+    log.warning("YOLO warmup skipped (no frame within %.1fs)", MODEL_WARMUP_TIMEOUT)
+
+
 class CaptureStreamThread(threading.Thread):
     """Reads camera and pushes JPEGs at STREAM_FPS — never blocked by YOLO."""
 
@@ -132,8 +160,10 @@ class CaptureStreamThread(threading.Thread):
         self.fail_streak = 0
 
     def run(self):
-        log.info("Capture stream started (target %d FPS)", STREAM_FPS)
+        log.info("Capture stream started (target %d FPS, recovery at %d failures)", STREAM_FPS, CAMERA_REOPEN_THRESHOLD)
         interval = 1.0 / max(STREAM_FPS, 1)
+        last_frame_time = time.time()
+        
         while not self.stop.is_set():
             t0 = time.perf_counter()
             ret, frame = self.holder.read()
@@ -142,6 +172,7 @@ class CaptureStreamThread(threading.Thread):
                 time.sleep(0.01)
                 continue
 
+            last_frame_time = time.time()
             self.fail_streak = 0
             set_camera_status(True, None)
             self.hub.set_frame(frame)
@@ -157,16 +188,22 @@ class CaptureStreamThread(threading.Thread):
 
     def _handle_read_fail(self):
         self.fail_streak += 1
-        if self.fail_streak == 1 or self.fail_streak % 20 == 0:
-            log.warning("Frame grab failed (%d) in capture thread", self.fail_streak)
-        if self.fail_streak >= 60:
-            set_camera_status(False, "Camera stalled — reconnecting…")
+        if self.fail_streak == 1:
+            log.warning("Frame grab failed in capture thread")
+        elif self.fail_streak % 10 == 0:
+            log.warning("Frame grab failed (%d consecutive) — camera may be stalled", self.fail_streak)
+        
+        if self.fail_streak >= CAMERA_REOPEN_THRESHOLD:
+            set_camera_status(False, f"Camera stalled ({self.fail_streak} frames) — reconnecting…")
+            log.error("Reopening camera after %d consecutive failures", self.fail_streak)
             new_cap = initialize_camera(CAMERA_SOURCE)
             if new_cap is not None:
                 self.holder.replace(new_cap)
                 self.fail_streak = 0
                 set_camera_status(True, None)
-                log.info("Camera reopened (capture thread)")
+                log.info("Camera reopened successfully (capture thread)")
+            else:
+                log.error("Failed to reopen camera — will retry next iteration")
 
 
 class InferenceThread(threading.Thread):
@@ -237,7 +274,8 @@ def start_pipeline(model: YOLO, stop: threading.Event) -> tuple[CameraHolder, Ca
     open_camera_with_retry(holder)
     hub = FrameHub()
     capture = CaptureStreamThread(holder, hub, stop)
-    inference = InferenceThread(model, hub, stop)
     capture.start()
+    _warmup_model(model, hub)
+    inference = InferenceThread(model, hub, stop)
     inference.start()
     return holder, capture, inference

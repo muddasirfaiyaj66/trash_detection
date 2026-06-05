@@ -98,3 +98,14 @@ INFERENCE_FPS   = int(os.environ.get("INFERENCE_FPS", "8"))
 YOLO_IMGSZ      = int(os.environ.get("YOLO_IMGSZ", "320"))   # smaller = faster on Pi
 MJPEG_QUALITY   = int(os.environ.get("MJPEG_QUALITY", "70"))
 MJPEG_MAX_FPS   = STREAM_FPS
+
+# ── Model Warmup ──────────────────────────────────────────────────────────────
+# Run one inference as soon as the first frame arrives so detections start immediately.
+MODEL_WARMUP = os.environ.get("MODEL_WARMUP", "true").lower() in ("1", "true", "yes")
+MODEL_WARMUP_TIMEOUT = float(os.environ.get("MODEL_WARMUP_TIMEOUT", "3.0"))
+
+# ── USB Camera Optimization ────────────────────────────────────────────────────
+# Prevents camera shutdown and low FPS issues on Raspberry Pi USB
+USB_FRAME_TIMEOUT = float(os.environ.get("USB_FRAME_TIMEOUT", "5.0"))  # max seconds to wait for a frame
+USB_WARMUP_PARALLEL = os.environ.get("USB_WARMUP_PARALLEL", "true").lower() in ("1", "true", "yes")  # read warmup frames in parallel
+CAMERA_REOPEN_THRESHOLD = int(os.environ.get("CAMERA_REOPEN_THRESHOLD", "30"))  # re-open after 30 consecutive failures (instead of 60)

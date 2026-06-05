@@ -55,6 +55,7 @@ def _opencv_has_gstreamer() -> bool:
 
 def _configure_capture(cap: cv2.VideoCapture) -> None:
     """Reduce latency and set a stable resolution for USB/V4L2 devices."""
+    # Aggressively drop buffered frames to prevent stale frames
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
@@ -68,7 +69,13 @@ def _configure_capture(cap: cv2.VideoCapture) -> None:
         except Exception:
             pass
     try:
+        # MJPEG is more efficient than raw frames on USB
         cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+    except Exception:
+        pass
+    # Reduce autofocus overhead if supported
+    try:
+        cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
     except Exception:
         pass
 
@@ -77,8 +84,20 @@ def _verify_capture(cap, label: str, warmup: int = CAMERA_WARMUP_FRAMES) -> bool
     """
     OpenCV often reports isOpened()=True before the device delivers frames.
     Discard warmup frames and require at least one valid buffer.
+    Parallel frame reading for faster warmup.
     """
     _configure_capture(cap)
+    
+    # Try parallel warmup first (read frames without delay between reads)
+    if CAMERA_WARMUP_PARALLEL:
+        for i in range(warmup):
+            ret, frame = cap.read()
+            if ret and frame is not None and getattr(frame, "size", 0) > 0:
+                log.info("Camera verified (%s) after %d frame(s) — parallel warmup", label, i + 1)
+                return True
+        return False
+    
+    # Fallback: staggered warmup with delays
     for i in range(warmup):
         ret, frame = cap.read()
         if ret and frame is not None and getattr(frame, "size", 0) > 0:
@@ -201,7 +220,8 @@ class RpicamVidCapture:
         return jpeg
 
     def read(self):
-        deadline = time.time() + 5.0
+        from config import USB_FRAME_TIMEOUT
+        deadline = time.time() + USB_FRAME_TIMEOUT
         while time.time() < deadline:
             jpeg = self._read_jpeg()
             if jpeg:
@@ -209,6 +229,7 @@ class RpicamVidCapture:
                 if frame is not None and frame.size > 0:
                     return True, frame
             time.sleep(0.01)
+        log.warning("rpicam read timeout (%.1f s) — camera may be stalled", USB_FRAME_TIMEOUT)
         return False, None
 
     def release(self):

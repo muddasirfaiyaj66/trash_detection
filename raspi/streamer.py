@@ -74,7 +74,8 @@ def push_frame(jpeg_bytes: bytes):
 def _stream_status() -> dict:
     with _frame_lock:
         age = None if _frame_time <= 0 else time.time() - _frame_time
-        active = _latest_frame is not None and age is not None and age < 4.0
+        # Frame is stale if older than 2 seconds (instead of 4)
+        active = _latest_frame is not None and age is not None and age < 2.0
         return {
             "active": active,
             "last_frame_age_sec": round(age, 2) if age is not None else None,
