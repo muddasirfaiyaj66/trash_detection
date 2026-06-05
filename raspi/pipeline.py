@@ -22,8 +22,8 @@ from streamer import push_frame, set_camera_status
 
 log = logging.getLogger(__name__)
 
-# BGR box colors per class
-_BOX_COLORS = {2: (255, 120, 60), 3: (60, 200, 120)}
+# BGR box colors per class (0=paper, 1=plastic)
+_BOX_COLORS = {0: (255, 120, 60), 1: (60, 200, 120)}
 
 # ── Thermal protection ────────────────────────────────────────────────────────
 _thermal_lock = threading.Lock()

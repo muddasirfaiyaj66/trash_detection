@@ -10,9 +10,9 @@ CONFIDENCE     = 0.6
 LINE_WIDTH     = 2
 
 # Class indices from data.yaml:
-#   0=can | 1=glass | 2=paper | 3=plastic | 4=trash
-DETECT_CLASSES = [2, 3]
-CLASS_NAMES    = {2: "paper", 3: "plastic"}
+# data.yaml classes (2-class model):  0=paper | 1=plastic
+DETECT_CLASSES = [0, 1]
+CLASS_NAMES    = {0: "paper", 1: "plastic"}
 
 # ── Camera (pick ONE type for your hardware) ──────────────────────────────────
 #

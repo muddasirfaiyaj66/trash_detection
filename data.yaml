@@ -3,4 +3,4 @@ val: F:\trash_detection\valid\images
 test: F:\trash_detection\test\images
 
 nc: 2
-names: ["paper", "plastic bottle"]
+names: ["paper", "plastic"]

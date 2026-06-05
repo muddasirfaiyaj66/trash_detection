@@ -29,7 +29,7 @@ _CLOSE_EP  = {"paper": PAPER_LID_CLOSE_EP,  "plastic": PLASTIC_LID_CLOSE_EP}
 _STATUS_EP = {"paper": PAPER_STATUS_EP, "plastic": PLASTIC_STATUS_EP}
 
 # ── Class index → dustbin name ────────────────────────────────────────────────
-CLASS_TO_BIN = {2: "paper", 3: "plastic"}
+CLASS_TO_BIN = {0: "paper", 1: "plastic"}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
