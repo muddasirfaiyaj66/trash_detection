@@ -105,15 +105,30 @@ API_TIMEOUT         = 5      # seconds before HTTP request times out
 
 # ── Ground-station stream ─────────────────────────────────────────────────────
 # Stream runs at full camera rate; YOLO runs separately so video stays smooth.
-STREAM_FPS      = int(os.environ.get("STREAM_FPS", "30"))
-INFERENCE_FPS   = int(os.environ.get("INFERENCE_FPS", "15"))  # thread runs as fast as the Pi allows up to this
-YOLO_IMGSZ      = int(os.environ.get("YOLO_IMGSZ", "320"))   # smaller = faster on Pi (256 = even faster)
+# Thermal-safe defaults for a passively-cooled Pi. 30 FPS + continuous YOLO
+# overheats the CPU and triggers a power-off. 20 FPS stream + 5 FPS inference is
+# smooth and runs much cooler. Raise STREAM_FPS=30 only if you have active cooling.
+STREAM_FPS      = int(os.environ.get("STREAM_FPS", "20"))
+INFERENCE_FPS   = int(os.environ.get("INFERENCE_FPS", "5"))   # YOLO rate (heat scales with this)
+YOLO_IMGSZ      = int(os.environ.get("YOLO_IMGSZ", "320"))   # smaller = faster/cooler (256 = even more)
 MJPEG_QUALITY   = int(os.environ.get("MJPEG_QUALITY", "70"))
 MJPEG_MAX_FPS   = STREAM_FPS
 
 # How long (seconds) the last detection boxes stay drawn on the stream between
 # inferences. Higher = smoother boxes when YOLO runs slower than the video.
 DETECTION_TTL   = float(os.environ.get("DETECTION_TTL", "1.2"))
+
+# ── CPU / thermal protection ──────────────────────────────────────────────────
+# Cap worker threads so YOLO/OpenCV don't peg every core (leaves headroom = less
+# heat). Default leaves 1 core free. Set CPU_THREADS=0 to use all cores.
+CPU_THREADS     = int(os.environ.get("CPU_THREADS", str(max(1, (os.cpu_count() or 4) - 1))))
+
+# Background guard that watches CPU temperature and throttles inference before the
+# Pi overheats and powers off. Throttles at MAX, resumes once cooled to RESUME.
+THERMAL_GUARD       = os.environ.get("THERMAL_GUARD", "true").lower() in ("1", "true", "yes")
+THERMAL_MAX_TEMP    = float(os.environ.get("THERMAL_MAX_TEMP", "78"))     # °C — start throttling
+THERMAL_RESUME_TEMP = float(os.environ.get("THERMAL_RESUME_TEMP", "68"))  # °C — back to normal
+THERMAL_POLL        = float(os.environ.get("THERMAL_POLL", "4"))          # seconds between checks
 
 # ── Inference acceleration (NCNN) ─────────────────────────────────────────────
 # NCNN is an ARM-optimized runtime that is typically 2-3x faster than PyTorch on

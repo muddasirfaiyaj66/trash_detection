@@ -189,6 +189,11 @@ if WEBSOCKET_AVAILABLE:
 def status():
     import camera
     cam_mode = camera.get_camera_mode()
+    try:
+        import pipeline
+        system = pipeline.thermal_state()
+    except Exception:
+        system = {"cpu_temp": 0.0, "throttled": False}
     with _lock:
         data = {
             "paper":   dict(dustbin_state["paper"]),
@@ -201,6 +206,7 @@ def status():
                 "transform": camera.get_camera_transform(),
             },
             "stream": _stream_status(),
+            "system": system,
         }
     return jsonify(data)
 

@@ -2,6 +2,16 @@
 # detect.py  –  Main entry: stream @ 30 FPS + YOLO in parallel
 # ─────────────────────────────────────────────────────────────────────────────
 
+import os
+
+# Cap native thread pools BEFORE cv2/torch/ncnn initialise them, so YOLO doesn't
+# peg all cores and overheat the Pi. Must run before the heavy imports below.
+_cores = os.cpu_count() or 4
+_threads = os.environ.get("CPU_THREADS") or str(max(1, _cores - 1))
+if _threads != "0":
+    for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+        os.environ.setdefault(_v, _threads)
+
 import time
 import logging
 import threading
@@ -12,8 +22,13 @@ from ultralytics import YOLO
 
 from config import (
     MODEL_PATH, CLASS_NAMES, CAMERA_TYPE, USB_CAMERA_INDEX, ESP32_ENABLED,
-    STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ, USE_NCNN,
+    STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ, USE_NCNN, CPU_THREADS,
 )
+
+try:
+    cv2.setNumThreads(CPU_THREADS if CPU_THREADS > 0 else _cores)
+except Exception:
+    pass
 from dustbin_api import LidAutoCloseThread, FillLevelPoller
 from streamer import start_stream_server
 from pipeline import start_pipeline, CameraHolder

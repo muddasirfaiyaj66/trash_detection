@@ -14,7 +14,7 @@ from config import (
     CONFIDENCE, LINE_WIDTH, DETECT_CLASSES, CLASS_NAMES,
     MJPEG_QUALITY, STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ,
     CAMERA_REOPEN_THRESHOLD, MODEL_WARMUP, MODEL_WARMUP_TIMEOUT,
-    DETECTION_TTL,
+    DETECTION_TTL, THERMAL_GUARD, THERMAL_MAX_TEMP, THERMAL_RESUME_TEMP, THERMAL_POLL,
 )
 from camera import initialize_camera, consume_switch_request, get_camera_mode, apply_transform
 from dustbin_api import on_detection
@@ -24,6 +24,62 @@ log = logging.getLogger(__name__)
 
 # BGR box colors per class
 _BOX_COLORS = {2: (255, 120, 60), 3: (60, 200, 120)}
+
+# ── Thermal protection ────────────────────────────────────────────────────────
+_thermal_lock = threading.Lock()
+_cpu_temp = 0.0
+_throttled = False
+
+
+def get_cpu_temp() -> float:
+    """CPU temperature in °C (Linux thermal zone), or 0.0 if unavailable."""
+    try:
+        with open("/sys/class/thermal/thermal_zone0/temp") as f:
+            return int(f.read().strip()) / 1000.0
+    except Exception:
+        return 0.0
+
+
+def thermal_state() -> dict:
+    with _thermal_lock:
+        return {"cpu_temp": round(_cpu_temp, 1), "throttled": _throttled}
+
+
+def _is_throttled() -> bool:
+    with _thermal_lock:
+        return _throttled
+
+
+class ThermalGuard(threading.Thread):
+    """Watches CPU temp and throttles inference before the Pi overheats/powers off."""
+
+    def __init__(self, stop: threading.Event):
+        super().__init__(daemon=True, name="ThermalGuard")
+        self.stop = stop
+
+    def run(self):
+        global _cpu_temp, _throttled
+        if not THERMAL_GUARD:
+            return
+        if get_cpu_temp() <= 0:
+            log.info("Thermal guard: no temp sensor found — disabled")
+            return
+        log.info("Thermal guard on (throttle ≥ %.0f°C, resume ≤ %.0f°C)", THERMAL_MAX_TEMP, THERMAL_RESUME_TEMP)
+        while not self.stop.is_set():
+            t = get_cpu_temp()
+            with _thermal_lock:
+                _cpu_temp = t
+                if not _throttled and t >= THERMAL_MAX_TEMP:
+                    _throttled = True
+                    log.warning("CPU %.1f°C ≥ %.0f°C — throttling inference to cool down", t, THERMAL_MAX_TEMP)
+                elif _throttled and t <= THERMAL_RESUME_TEMP:
+                    _throttled = False
+                    log.info("CPU cooled to %.1f°C — resuming normal inference", t)
+            steps = max(1, int(THERMAL_POLL * 10))
+            for _ in range(steps):
+                if self.stop.is_set():
+                    break
+                time.sleep(0.1)
 
 
 class CameraHolder:
@@ -193,7 +249,9 @@ class CaptureStreamThread(threading.Thread):
                 push_frame(_encode_jpeg(composed))
 
             elapsed = time.perf_counter() - t0
-            wait = interval - elapsed
+            # Halve the stream rate while throttled to cut encode load (less heat).
+            eff_interval = interval * 2 if _is_throttled() else interval
+            wait = eff_interval - elapsed
             if wait > 0:
                 time.sleep(wait)
 
@@ -249,29 +307,39 @@ class InferenceThread(threading.Thread):
         interval = 1.0 / max(INFERENCE_FPS, 1)
         while not self.stop.is_set():
             t0 = time.perf_counter()
+            # When the Pi is hot, run inference at ~1 FPS so the CPU can cool.
+            if _is_throttled():
+                frame = self.hub.snapshot()
+                if frame is not None:
+                    self._run_once(frame)
+                time.sleep(1.0)
+                continue
             frame = self.hub.snapshot()
             if frame is not None:
-                results = self.model.predict(
-                    source=frame,
-                    conf=CONFIDENCE,
-                    classes=DETECT_CLASSES,
-                    imgsz=YOLO_IMGSZ,
-                    verbose=False,
-                )
-                boxes = _extract_boxes(results)
-                self.hub.set_boxes(boxes)
-                self._count_inference()
-                for cls_id, conf, *_ in boxes:
-                    log.info(
-                        "Detected: class %d (%s) conf=%.2f",
-                        cls_id, CLASS_NAMES.get(cls_id, "?"), conf,
-                    )
-                    on_detection(cls_id)
+                self._run_once(frame)
 
             elapsed = time.perf_counter() - t0
             wait = interval - elapsed
             if wait > 0:
                 time.sleep(wait)
+
+    def _run_once(self, frame):
+        results = self.model.predict(
+            source=frame,
+            conf=CONFIDENCE,
+            classes=DETECT_CLASSES,
+            imgsz=YOLO_IMGSZ,
+            verbose=False,
+        )
+        boxes = _extract_boxes(results)
+        self.hub.set_boxes(boxes)
+        self._count_inference()
+        for cls_id, conf, *_ in boxes:
+            log.info(
+                "Detected: class %d (%s) conf=%.2f",
+                cls_id, CLASS_NAMES.get(cls_id, "?"), conf,
+            )
+            on_detection(cls_id)
 
     def _count_inference(self):
         self._inf_cnt += 1
@@ -314,6 +382,7 @@ def start_pipeline(model: YOLO, stop: threading.Event) -> tuple[CameraHolder, Ca
     hub = FrameHub()
     capture = CaptureStreamThread(holder, hub, stop)
     capture.start()
+    ThermalGuard(stop).start()
     _warmup_model(model, hub)
     inference = InferenceThread(model, hub, stop)
     inference.start()
