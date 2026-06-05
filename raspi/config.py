@@ -100,8 +100,8 @@ ESP32_PING_EP        = f"http://{ESP32_HOST}/ping"
 
 # ── Timing ────────────────────────────────────────────────────────────────────
 LID_OPEN_DURATION   = 5.0    # seconds lid stays open after last detection
-LEVEL_POLL_INTERVAL = 10.0   # seconds between fill-level polls
-API_TIMEOUT         = 5      # seconds before HTTP request times out
+LEVEL_POLL_INTERVAL = 2.0    # seconds between fill-level polls (lower = snappier dashboard)
+API_TIMEOUT         = 3      # seconds before HTTP request times out (fail fast)
 
 # ── Ground-station stream ─────────────────────────────────────────────────────
 # Stream runs at full camera rate; YOLO runs separately so video stays smooth.

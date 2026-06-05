@@ -6,6 +6,7 @@ import time
 import threading
 import logging
 import requests
+from requests.adapters import HTTPAdapter
 from config import (
     PAPER_LID_OPEN_EP, PAPER_LID_CLOSE_EP, PAPER_STATUS_EP,
     PLASTIC_LID_OPEN_EP, PLASTIC_LID_CLOSE_EP, PLASTIC_STATUS_EP,
@@ -14,6 +15,15 @@ from config import (
 )
 
 log = logging.getLogger(__name__)
+
+# Persistent session → keep-alive connection reuse means the link to the ESP32
+# stays warm (no repeated mDNS lookups / TCP handshakes), so lid commands fire
+# almost instantly instead of taking hundreds of ms each.
+_session = requests.Session()
+_session.headers.update({"Connection": "keep-alive"})
+_adapter = HTTPAdapter(pool_connections=4, pool_maxsize=4, max_retries=0)
+_session.mount("http://", _adapter)
+_session.mount("https://", _adapter)
 
 # ── Shared state (thread-safe via lock) ──────────────────────────────────────
 _lock = threading.Lock()
@@ -38,7 +48,7 @@ def _post(url: str, payload: dict = None) -> dict | None:
     if not ESP32_ENABLED:
         return None
     try:
-        r = requests.post(url, json=payload or {}, timeout=API_TIMEOUT)
+        r = _session.post(url, json=payload or {}, timeout=API_TIMEOUT)
         r.raise_for_status()
         return r.json() if r.content else {}
     except Exception as e:
@@ -52,7 +62,7 @@ def _get(url: str) -> dict | None:
     if not ESP32_ENABLED:
         return None
     try:
-        r = requests.get(url, timeout=API_TIMEOUT)
+        r = _session.get(url, timeout=API_TIMEOUT)
         r.raise_for_status()
         return r.json() if r.content else {}
     except Exception as e:
@@ -143,12 +153,13 @@ class FillLevelPoller(threading.Thread):
             for bin_name, url in _STATUS_EP.items():
                 data = _get(url)
                 if data:
-                    pct = int(data.get("level", 0))
-                    open_deg = int(data.get("open_deg", 90))
-                    close_deg = int(data.get("close_deg", 0))
                     with _lock:
-                        dustbin_state[bin_name]["level_pct"] = pct
-                        dustbin_state[bin_name]["open_deg"] = open_deg
-                        dustbin_state[bin_name]["close_deg"] = close_deg
+                        st = dustbin_state[bin_name]
+                        st["level_pct"] = int(data.get("level", st["level_pct"]))
+                        st["open_deg"] = int(data.get("open_deg", st["open_deg"]))
+                        st["close_deg"] = int(data.get("close_deg", st["close_deg"]))
+                        pct = st["level_pct"]
+                        open_deg = st["open_deg"]
+                        close_deg = st["close_deg"]
                     log.debug("Fill level/config [%s] = %d%% (open: %d°, close: %d°)", bin_name, pct, open_deg, close_deg)
             time.sleep(LEVEL_POLL_INTERVAL)
