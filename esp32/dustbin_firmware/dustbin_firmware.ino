@@ -77,10 +77,13 @@ const WifiCredential WIFI_NETWORKS[] = {
 #define PLASTIC_TRIG_PIN  14
 #define PLASTIC_ECHO_PIN  15
 
-// ── Servo angles ──────────────────────────────────────────────────────────
-#define SERVO_CLOSED_DEG  0      // degrees when lid is CLOSED
-#define SERVO_OPEN_DEG    90     // degrees when lid is OPEN
-#define SERVO_STEP_MS     8      // ms per 1° — lower = faster (min ~4)
+// ── Servo angles (per bin) ──────────────────────────────────────────────────
+//  Each bin can have its own open/close angles (calibrate to your mechanics).
+#define PAPER_OPEN_DEG     0     // Paper   lid OPEN  position
+#define PAPER_CLOSE_DEG    134   // Paper   lid CLOSED position
+#define PLASTIC_OPEN_DEG   45    // Plastic lid OPEN  position
+#define PLASTIC_CLOSE_DEG  168   // Plastic lid CLOSED position
+#define SERVO_STEP_MS      8     // ms per 1° — lower = faster (min ~4)
 
 // ── Bin geometry (cm) ─────────────────────────────────────────────────────
 //  Sensor mounted on inside of lid, pointing straight down.
@@ -128,8 +131,8 @@ struct Dustbin {
     int         closeDeg;
 };
 
-Dustbin paperBin   = { "paper",   PAPER_SERVO_PIN,   PAPER_TRIG_PIN,   PAPER_ECHO_PIN,   Servo(), LID_CLOSED, SERVO_CLOSED_DEG, 0, SERVO_OPEN_DEG, SERVO_CLOSED_DEG };
-Dustbin plasticBin = { "plastic", PLASTIC_SERVO_PIN, PLASTIC_TRIG_PIN, PLASTIC_ECHO_PIN, Servo(), LID_CLOSED, SERVO_CLOSED_DEG, 0, SERVO_OPEN_DEG, SERVO_CLOSED_DEG };
+Dustbin paperBin   = { "paper",   PAPER_SERVO_PIN,   PAPER_TRIG_PIN,   PAPER_ECHO_PIN,   Servo(), LID_CLOSED, PAPER_CLOSE_DEG,   0, PAPER_OPEN_DEG,   PAPER_CLOSE_DEG };
+Dustbin plasticBin = { "plastic", PLASTIC_SERVO_PIN, PLASTIC_TRIG_PIN, PLASTIC_ECHO_PIN, Servo(), LID_CLOSED, PLASTIC_CLOSE_DEG, 0, PLASTIC_OPEN_DEG, PLASTIC_CLOSE_DEG };
 Dustbin* bins[2]   = { &paperBin, &plasticBin };
 
 
@@ -440,13 +443,13 @@ void setup() {
 
     paperBin.servo.setPeriodHertz(50);
     paperBin.servo.attach(PAPER_SERVO_PIN, 500, 2400);
-    paperBin.servo.write(SERVO_CLOSED_DEG);
-    Serial.printf("[Servo] Paper   GPIO%-2d  → %d° (closed)\n", PAPER_SERVO_PIN, SERVO_CLOSED_DEG);
+    paperBin.servo.write(paperBin.closeDeg);
+    Serial.printf("[Servo] Paper   GPIO%-2d  → %d° (closed)\n", PAPER_SERVO_PIN, paperBin.closeDeg);
 
     plasticBin.servo.setPeriodHertz(50);
     plasticBin.servo.attach(PLASTIC_SERVO_PIN, 500, 2400);
-    plasticBin.servo.write(SERVO_CLOSED_DEG);
-    Serial.printf("[Servo] Plastic GPIO%-2d  → %d° (closed)\n", PLASTIC_SERVO_PIN, SERVO_CLOSED_DEG);
+    plasticBin.servo.write(plasticBin.closeDeg);
+    Serial.printf("[Servo] Plastic GPIO%-2d  → %d° (closed)\n", PLASTIC_SERVO_PIN, plasticBin.closeDeg);
 
     // WiFi (multi-network)
     WiFi.mode(WIFI_STA);

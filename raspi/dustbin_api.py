@@ -19,8 +19,8 @@ log = logging.getLogger(__name__)
 _lock = threading.Lock()
 
 dustbin_state = {
-    "paper":   {"lid": "closed", "level_pct": 0, "last_detected": 0, "open_deg": 90, "close_deg": 0},
-    "plastic": {"lid": "closed", "level_pct": 0, "last_detected": 0, "open_deg": 90, "close_deg": 0},
+    "paper":   {"lid": "closed", "level_pct": 0, "last_detected": 0, "open_deg": 0,  "close_deg": 134},
+    "plastic": {"lid": "closed", "level_pct": 0, "last_detected": 0, "open_deg": 45, "close_deg": 168},
 }
 
 # ── Endpoint maps ─────────────────────────────────────────────────────────────

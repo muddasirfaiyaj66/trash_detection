@@ -157,7 +157,7 @@ All endpoints respond on port 80 using hostname **`http://dustbin-controller-tea
 | `GET` | `/api/dustbin/paper/level` | `{"level":45,"distance_cm":"19.2","lid":"closed","bin":"paper"}` |
 | `POST` | `/api/dustbin/paper/open` | `{"status":"ok","action":"open","lid":"open","bin":"paper"}` |
 | `POST` | `/api/dustbin/paper/close` | `{"status":"ok","action":"close","lid":"closed","bin":"paper"}` |
-| `GET` | `/api/dustbin/paper/status` | `{"bin":"paper","lid":"closed","level":40,...,"open_deg":90,"close_deg":0}` |
+| `GET` | `/api/dustbin/paper/status` | `{"bin":"paper","lid":"closed","level":40,...,"open_deg":0,"close_deg":134}` |
 | `POST` | `/api/dustbin/paper/config` | Configures servo degrees dynamically. Ex: `/config?open=100&close=5` |
 
 ### Plastic Dustbin (class 3)
@@ -166,7 +166,7 @@ All endpoints respond on port 80 using hostname **`http://dustbin-controller-tea
 | `GET` | `/api/dustbin/plastic/level` | `{"level":20,"distance_cm":"28.0","lid":"closed","bin":"plastic"}` |
 | `POST` | `/api/dustbin/plastic/open` | `{"status":"ok","action":"open","lid":"open","bin":"plastic"}` |
 | `POST` | `/api/dustbin/plastic/close` | `{"status":"ok","action":"close","lid":"closed","bin":"plastic"}` |
-| `GET` | `/api/dustbin/plastic/status` | `{"bin":"plastic","lid":"closed","level":10,...,"open_deg":90,"close_deg":0}` |
+| `GET` | `/api/dustbin/plastic/status` | `{"bin":"plastic","lid":"closed","level":10,...,"open_deg":45,"close_deg":168}` |
 | `POST` | `/api/dustbin/plastic/config` | Configures servo degrees dynamically. Ex: `/config?open=100&close=5` |
 
 ### Health
@@ -214,8 +214,8 @@ On power-up you'll see:
 ║  Paper (class 2)  +  Plastic (class 3)  ║
 ╚══════════════════════════════════════════╝
 
-[Servo] Paper   GPIO5   → 0° (closed)
-[Servo] Plastic GPIO6   → 0° (closed)
+[Servo] Paper   GPIO5   → 134° (closed)
+[Servo] Plastic GPIO6   → 168° (closed)
 [WiFi] Scanning for known networks…
 [WiFi] 3 network(s) configured – connecting....
 ╔══════════════════════════════════════════════════╗
