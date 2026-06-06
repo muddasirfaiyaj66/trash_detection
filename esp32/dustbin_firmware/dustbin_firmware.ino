@@ -55,9 +55,10 @@
 //
 struct WifiCredential { const char* ssid; const char* pass; };
 const WifiCredential WIFI_NETWORKS[] = {
-    { "HomeWiFi_SSID",     "HomeWiFiPassword"     },  // ← primary network
-    { "LabWiFi_SSID",      "LabWiFiPassword"       },  // ← secondary network
-    { "MobileHotspot_SSID","MobileHotspotPassword" },  // ← phone hotspot (backup)
+      { "Motorola edge",  "1234@@@###" },
+    { "UIU-STUDENT",    "12345678"   },
+    { "Redmi Note 10S", "11111111"   },
+    { "Sagar", "96896061"   },   // ← phone hotspot (backup)
     // Add more rows here if needed:
     // { "AnotherSSID", "AnotherPassword" },
 };
@@ -83,12 +84,13 @@ const WifiCredential WIFI_NETWORKS[] = {
 #define PAPER_CLOSE_DEG    134   // Paper   lid CLOSED position
 #define PLASTIC_OPEN_DEG   45    // Plastic lid OPEN  position
 #define PLASTIC_CLOSE_DEG  168   // Plastic lid CLOSED position
-#define SERVO_STEP_MS      8     // ms per 1° — lower = faster (min ~4)
+#define SERVO_STEP_MS      8     // ms per 1° when CLOSING — gentle (min ~4)
+#define SERVO_OPEN_STEP_MS 2     // ms per 1° when OPENING — fast so the lid pops open instantly
 
 // ── Bin geometry (cm) ─────────────────────────────────────────────────────
 //  Sensor mounted on inside of lid, pointing straight down.
 //  Measure your actual bin and adjust these:
-#define BIN_EMPTY_CM      35.0f  // sensor→bottom distance when bin is empty
+#define BIN_EMPTY_CM      22.0f  // sensor→bottom distance when bin is empty
 #define BIN_FULL_CM        3.0f  // sensor→trash distance when bin is full
 
 // ── Ultrasonic samples (median filter) ───────────────────────────────────
@@ -97,7 +99,7 @@ const WifiCredential WIFI_NETWORKS[] = {
 // ── Auto-close safety (ms) ───────────────────────────────────────────────
 //  Each bin independently closes if it hears no /close from the Pi within
 //  this time. Protects against Pi crash or network drop.
-#define AUTO_CLOSE_MS     8000   // 8 seconds
+#define AUTO_CLOSE_MS     2000   // 2 seconds
 
 // ── Status LED ────────────────────────────────────────────────────────────
 #define LED_PIN           2
@@ -166,12 +168,12 @@ int distToLevel(float cm) {
 // ─────────────────────────────────────────────────────────────────────────────
 //  Servo – smooth sweep
 // ─────────────────────────────────────────────────────────────────────────────
-void sweepTo(Dustbin* b, int target) {
+void sweepTo(Dustbin* b, int target, int stepMs) {
     int step = (target > b->currentDeg) ? 1 : -1;
     while (b->currentDeg != target) {
         b->currentDeg += step;
         b->servo.write(b->currentDeg);
-        delay(SERVO_STEP_MS);
+        delay(stepMs);
     }
 }
 
@@ -184,7 +186,7 @@ void openLid(Dustbin* b) {
     Serial.printf("[%s] Opening lid…\n", b->name);
     b->lidState = LID_OPENING;
     digitalWrite(LED_PIN, HIGH);
-    sweepTo(b, b->openDeg);
+    sweepTo(b, b->openDeg, SERVO_OPEN_STEP_MS);
     b->lidState   = LID_OPEN;
     b->openedAtMs = millis();
     Serial.printf("[%s] Lid OPEN ✓\n", b->name);
@@ -194,7 +196,7 @@ void closeLid(Dustbin* b) {
     if (b->lidState == LID_CLOSED || b->lidState == LID_CLOSING) return;
     Serial.printf("[%s] Closing lid…\n", b->name);
     b->lidState = LID_CLOSING;
-    sweepTo(b, b->closeDeg);
+    sweepTo(b, b->closeDeg, SERVO_STEP_MS);
     b->lidState = LID_CLOSED;
     if (paperBin.lidState == LID_CLOSED && plasticBin.lidState == LID_CLOSED)
         digitalWrite(LED_PIN, LOW);

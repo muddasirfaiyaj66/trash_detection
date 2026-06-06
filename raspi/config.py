@@ -6,7 +6,9 @@ import os
 
 # ── Model ─────────────────────────────────────────────────────────────────────
 MODEL_PATH     = "best.pt"   # copy best.pt into the raspi/ folder
-CONFIDENCE     = 0.6
+# Lower confidence = more (and earlier) detections so the lid triggers promptly.
+# Raise toward 0.5 if you get false positives.
+CONFIDENCE     = float(os.environ.get("CONFIDENCE", "0.4"))
 LINE_WIDTH     = 2
 
 # Class indices from data.yaml:
@@ -109,8 +111,10 @@ API_TIMEOUT         = 3      # seconds before HTTP request times out (fail fast)
 # overheats the CPU and triggers a power-off. 20 FPS stream + 5 FPS inference is
 # smooth and runs much cooler. Raise STREAM_FPS=30 only if you have active cooling.
 STREAM_FPS      = int(os.environ.get("STREAM_FPS", "20"))
-INFERENCE_FPS   = int(os.environ.get("INFERENCE_FPS", "5"))   # YOLO rate (heat scales with this)
-YOLO_IMGSZ      = int(os.environ.get("YOLO_IMGSZ", "320"))   # smaller = faster/cooler (256 = even more)
+INFERENCE_FPS   = int(os.environ.get("INFERENCE_FPS", "8"))   # YOLO rate — higher = snappier lid trigger
+# Match the 640 training size for best accuracy (Pi has active cooling). Drop to
+# 512/416 if you ever run without the fan and the thermal guard starts throttling.
+YOLO_IMGSZ      = int(os.environ.get("YOLO_IMGSZ", "640"))
 MJPEG_QUALITY   = int(os.environ.get("MJPEG_QUALITY", "70"))
 MJPEG_MAX_FPS   = STREAM_FPS
 

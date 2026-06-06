@@ -13,6 +13,7 @@ if _threads != "0":
         os.environ.setdefault(_v, _threads)
 
 import time
+import shutil
 import logging
 import threading
 from pathlib import Path
@@ -54,11 +55,30 @@ def load_model() -> YOLO:
         return model
 
     ncnn_dir = Path(f"{Path(MODEL_PATH).with_suffix('')}_ncnn_model")
+    marker = ncnn_dir / ".imgsz"
+
+    # Re-export if: no export yet, imgsz changed, or best.pt is newer than the
+    # export (i.e. you uploaded a new model). Prevents a stale/mismatched NCNN.
+    need_export = True
+    if ncnn_dir.exists() and marker.exists():
+        try:
+            same_size = marker.read_text().strip() == str(YOLO_IMGSZ)
+            fresh = ncnn_dir.stat().st_mtime >= Path(MODEL_PATH).stat().st_mtime
+            need_export = not (same_size and fresh)
+        except Exception:
+            need_export = True
+
     try:
-        if not ncnn_dir.exists():
-            log.info("Exporting model to NCNN for faster Pi inference (one-time, ~1-2 min)…")
+        if need_export:
+            log.info("Exporting model to NCNN at imgsz=%d (one-time, ~1-2 min)…", YOLO_IMGSZ)
+            if ncnn_dir.exists():
+                shutil.rmtree(ncnn_dir, ignore_errors=True)
             model.export(format="ncnn", imgsz=YOLO_IMGSZ)
-        log.info("Loading NCNN model: %s", ncnn_dir)
+            try:
+                marker.write_text(str(YOLO_IMGSZ))
+            except Exception:
+                pass
+        log.info("Loading NCNN model: %s (imgsz=%d)", ncnn_dir, YOLO_IMGSZ)
         return YOLO(str(ncnn_dir), task="detect")
     except Exception as e:
         log.warning(
