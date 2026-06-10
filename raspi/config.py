@@ -34,12 +34,13 @@ CAMERA_TYPE = os.environ.get("CAMERA_TYPE", "usb")   # "usb" | "pi" | "auto"
 # On this Pi the A4tech USB cam is /dev/video8.
 USB_CAMERA_INDEX = int(os.environ.get("USB_CAMERA_INDEX", "8"))
 
-# Resolution — MUST be a size the camera actually advertises for MJPG, otherwise
-# the driver falls back to slow raw mode (~5 FPS). The A4tech cam offers MJPG at
-# 1920x1080 / 1280x720 / 800x600 @ 30fps (no 640x480 MJPG), so 720p is the sweet
-# spot: smooth 30 FPS, good quality, light to JPEG-decode on the Pi.
-CAMERA_WIDTH   = int(os.environ.get("CAMERA_WIDTH", "1280"))
-CAMERA_HEIGHT  = int(os.environ.get("CAMERA_HEIGHT", "720"))
+# Resolution — ask the camera for a lower mode than its max (e.g. 1080p USB cam).
+# Capturing at 720p/1080p wastes Pi CPU on JPEG decode + YOLO. Must be a size the
+# camera advertises for MJPG or the driver falls back to slow raw mode (~5 FPS).
+# Most 1080p webcams: 640×480 / 800×600 / 1280×720 MJPG @ 30fps. If 640×480 fails,
+# try CAMERA_WIDTH=800 CAMERA_HEIGHT=600.
+CAMERA_WIDTH   = int(os.environ.get("CAMERA_WIDTH", "640"))
+CAMERA_HEIGHT  = int(os.environ.get("CAMERA_HEIGHT", "480"))
 CAMERA_WARMUP_FRAMES = 15
 # Pi Camera: use full sensor crop (widest view, less “zoomed in”)
 CAMERA_WIDE_FOV = os.environ.get("CAMERA_WIDE_FOV", "true").lower() in ("1", "true", "yes")
@@ -117,7 +118,7 @@ INFERENCE_FPS   = int(os.environ.get("INFERENCE_FPS", "8"))   # YOLO rate — hi
 # Match the 640 training size for best accuracy (Pi has active cooling). Drop to
 # 512/416 if you ever run without the fan and the thermal guard starts throttling.
 YOLO_IMGSZ      = int(os.environ.get("YOLO_IMGSZ", "640"))
-MJPEG_QUALITY   = int(os.environ.get("MJPEG_QUALITY", "70"))
+MJPEG_QUALITY   = int(os.environ.get("MJPEG_QUALITY", "60"))
 MJPEG_MAX_FPS   = STREAM_FPS
 
 # How long (seconds) the last detection boxes stay drawn on the stream between
