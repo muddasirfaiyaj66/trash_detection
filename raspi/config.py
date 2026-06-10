@@ -9,7 +9,9 @@ MODEL_PATH     = "best.pt"   # copy best.pt into the raspi/ folder
 # Lower confidence = more (and earlier) detections so the lid triggers promptly.
 # Raise toward 0.5 if you get false positives.
 CONFIDENCE     = float(os.environ.get("CONFIDENCE", "0.4"))
-LINE_WIDTH     = 2
+LINE_WIDTH     = int(os.environ.get("LINE_WIDTH", "1"))
+# Shrink drawn boxes toward their center (1.0 = full YOLO size). Lower = tighter boxes.
+BOX_SCALE      = float(os.environ.get("BOX_SCALE", "0.80"))
 
 # Class indices from data.yaml:
 # data.yaml classes (2-class model):  0=paper | 1=plastic

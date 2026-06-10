@@ -23,7 +23,7 @@ from ultralytics import YOLO
 
 from config import (
     MODEL_PATH, CLASS_NAMES, CAMERA_TYPE, USB_CAMERA_INDEX, ESP32_ENABLED,
-    STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ, USE_NCNN, CPU_THREADS,
+    STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ, USE_NCNN, CPU_THREADS, BOX_SCALE, LINE_WIDTH,
 )
 
 try:
@@ -93,6 +93,7 @@ def main():
     log.info("  Trash Detection – Raspberry Pi Node")
     log.info("  Classes monitored: %s", CLASS_NAMES)
     log.info("  Stream %d FPS | YOLO %d FPS @ imgsz %d", STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ)
+    log.info("  Box scale %.0f%% | line width %d px", BOX_SCALE * 100, LINE_WIDTH)
     log.info("=" * 60)
 
     model = load_model()

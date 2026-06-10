@@ -11,7 +11,7 @@ import numpy as np
 from ultralytics import YOLO
 
 from config import (
-    CONFIDENCE, LINE_WIDTH, DETECT_CLASSES, CLASS_NAMES,
+    CONFIDENCE, LINE_WIDTH, BOX_SCALE, DETECT_CLASSES, CLASS_NAMES,
     MJPEG_QUALITY, STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ,
     CAMERA_REOPEN_THRESHOLD, MODEL_WARMUP, MODEL_WARMUP_TIMEOUT,
     DETECTION_TTL, THERMAL_GUARD, THERMAL_MAX_TEMP, THERMAL_RESUME_TEMP, THERMAL_POLL,
@@ -147,8 +147,21 @@ class FrameHub:
         return out
 
 
+def _scale_box(x1, y1, x2, y2, factor: float, w: int, h: int):
+    if factor >= 1.0:
+        return x1, y1, x2, y2
+    cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+    hw, hh = (x2 - x1) * factor / 2, (y2 - y1) * factor / 2
+    return (
+        max(0, cx - hw), max(0, cy - hh),
+        min(w - 1, cx + hw), min(h - 1, cy + hh),
+    )
+
+
 def _draw_boxes(frame: np.ndarray, boxes: list) -> None:
+    h, w = frame.shape[:2]
     for cls_id, conf, x1, y1, x2, y2 in boxes:
+        x1, y1, x2, y2 = _scale_box(x1, y1, x2, y2, BOX_SCALE, w, h)
         color = _BOX_COLORS.get(cls_id, (180, 180, 180))
         p1, p2 = (int(x1), int(y1)), (int(x2), int(y2))
         cv2.rectangle(frame, p1, p2, color, LINE_WIDTH)
