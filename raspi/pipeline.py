@@ -11,7 +11,7 @@ import numpy as np
 from ultralytics import YOLO
 
 from config import (
-    CONFIDENCE, LINE_WIDTH, BOX_SCALE, DETECT_CLASSES, CLASS_NAMES,
+    CONFIDENCE, YOLO_MIN_CONF, LINE_WIDTH, BOX_SCALE, DETECT_CLASSES, CLASS_NAMES,
     MJPEG_QUALITY, STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ,
     CAMERA_REOPEN_THRESHOLD, MODEL_WARMUP, MODEL_WARMUP_TIMEOUT,
     DETECTION_TTL, THERMAL_GUARD, THERMAL_MAX_TEMP, THERMAL_RESUME_TEMP, THERMAL_POLL,
@@ -24,6 +24,23 @@ log = logging.getLogger(__name__)
 
 # BGR box colors per class (0=paper, 1=plastic)
 _BOX_COLORS = {0: (255, 120, 60), 1: (60, 200, 120)}
+
+# Live-adjustable lid-open confidence (dashboard slider)
+_confidence_lock = threading.Lock()
+_lid_confidence = CONFIDENCE
+
+
+def get_confidence() -> float:
+    with _confidence_lock:
+        return _lid_confidence
+
+
+def set_confidence(value: float) -> float:
+    global _lid_confidence
+    v = max(0.05, min(0.95, float(value)))
+    with _confidence_lock:
+        _lid_confidence = v
+    return v
 
 # ── Thermal protection ────────────────────────────────────────────────────────
 _thermal_lock = threading.Lock()
@@ -204,7 +221,7 @@ def _warmup_model(model: YOLO, hub: FrameHub) -> None:
         try:
             results = model.predict(
                 source=frame,
-                conf=CONFIDENCE,
+                conf=YOLO_MIN_CONF,
                 classes=DETECT_CLASSES,
                 imgsz=YOLO_IMGSZ,
                 verbose=False,
@@ -339,7 +356,7 @@ class InferenceThread(threading.Thread):
     def _run_once(self, frame):
         results = self.model.predict(
             source=frame,
-            conf=CONFIDENCE,
+            conf=YOLO_MIN_CONF,
             classes=DETECT_CLASSES,
             imgsz=YOLO_IMGSZ,
             verbose=False,
@@ -347,12 +364,19 @@ class InferenceThread(threading.Thread):
         boxes = _extract_boxes(results)
         self.hub.set_boxes(boxes)
         self._count_inference()
+        lid_threshold = get_confidence()
         for cls_id, conf, *_ in boxes:
             log.info(
                 "Detected: class %d (%s) conf=%.2f",
                 cls_id, CLASS_NAMES.get(cls_id, "?"), conf,
             )
-            on_detection(cls_id)
+            if conf >= lid_threshold:
+                on_detection(cls_id, conf)
+            else:
+                log.debug(
+                    "Below lid threshold (%.0f%%): %s conf=%.2f",
+                    lid_threshold * 100, CLASS_NAMES.get(cls_id, "?"), conf,
+                )
 
     def _count_inference(self):
         self._inf_cnt += 1

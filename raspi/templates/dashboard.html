@@ -243,6 +243,16 @@
   .sliders { margin-top: 16px; display: flex; flex-direction: column; gap: 13px; }
   .slider-row label { display: flex; justify-content: space-between; font-size: 0.74rem; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
   .slider-row label b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .conf-hint { font-size: 0.72rem; color: var(--muted); margin-top: 10px; line-height: 1.45; }
+  .conf-live { font-size: 0.78rem; color: var(--muted); margin-bottom: 12px; }
+  .conf-live b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .conf-presets { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .conf-presets .btn { flex: 1; min-width: 52px; text-align: center; padding: 7px 10px; }
+  .conf-presets .btn.on { background: linear-gradient(145deg, rgba(59,130,246,.35), rgba(37,99,235,.25)); border-color: rgba(59,130,246,.5); color: #bfdbfe; }
+  .lid-actions { display: flex; gap: 8px; margin-top: 14px; }
+  .lid-actions .btn { flex: 1; }
+  .lid-actions .btn.open-btn { border-color: rgba(34,197,94,.45); color: #86efac; }
+  .lid-actions .btn.close-btn { border-color: rgba(245,158,11,.45); color: #fcd34d; }
   input[type="range"] { width: 100%; height: 26px; cursor: pointer; -webkit-appearance: none; background: transparent; }
   input[type="range"]::-webkit-slider-runnable-track { height: 6px; border-radius: 999px; background: rgba(255,255,255,.12); }
   input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; margin-top: -6px; width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 3px solid var(--blue); box-shadow: 0 2px 8px rgba(0,0,0,.4); }
@@ -354,13 +364,17 @@
           </div>
           <div class="sliders">
             <div class="slider-row">
-              <label>Open lid <b><span id="paper-open-val">90</span>°</b></label>
-              <input type="range" id="paper-open-input" min="0" max="180" value="90">
+              <label>Open lid <b><span id="paper-open-val">0</span>°</b></label>
+              <input type="range" id="paper-open-input" min="0" max="180" value="0">
             </div>
             <div class="slider-row">
-              <label>Close lid <b><span id="paper-close-val">0</span>°</b></label>
-              <input type="range" id="paper-close-input" min="0" max="180" value="0">
+              <label>Close lid <b><span id="paper-close-val">134</span>°</b></label>
+              <input type="range" id="paper-close-input" min="0" max="180" value="134">
             </div>
+          </div>
+          <div class="lid-actions">
+            <button type="button" class="btn open-btn" onclick="manualLid('paper','open')">Open lid</button>
+            <button type="button" class="btn close-btn" onclick="manualLid('paper','close')">Close lid</button>
           </div>
         </div>
         <!-- Plastic -->
@@ -404,16 +418,38 @@
           </div>
           <div class="sliders">
             <div class="slider-row">
-              <label>Open lid <b><span id="plastic-open-val">90</span>°</b></label>
-              <input type="range" id="plastic-open-input" min="0" max="180" value="90">
+              <label>Open lid <b><span id="plastic-open-val">45</span>°</b></label>
+              <input type="range" id="plastic-open-input" min="0" max="180" value="45">
             </div>
             <div class="slider-row">
-              <label>Close lid <b><span id="plastic-close-val">0</span>°</b></label>
-              <input type="range" id="plastic-close-input" min="0" max="180" value="0">
+              <label>Close lid <b><span id="plastic-close-val">168</span>°</b></label>
+              <input type="range" id="plastic-close-input" min="0" max="180" value="168">
             </div>
+          </div>
+          <div class="lid-actions">
+            <button type="button" class="btn open-btn" onclick="manualLid('plastic','open')">Open lid</button>
+            <button type="button" class="btn close-btn" onclick="manualLid('plastic','close')">Close lid</button>
           </div>
         </div>
       </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">Detection Settings</div>
+      <p class="conf-live">Current threshold: <b id="conf-current">40%</b> <span id="conf-decimal">(0.40)</span></p>
+      <div class="sliders">
+        <div class="slider-row">
+          <label>Lid opens when confidence ≥ <b><span id="conf-val">40</span>%</b></label>
+          <input type="range" id="conf-input" min="5" max="95" step="5" value="40">
+        </div>
+      </div>
+      <div class="conf-presets" role="group" aria-label="Confidence presets">
+        <button type="button" class="btn" data-conf="30" onclick="setConfPreset(30)">30%</button>
+        <button type="button" class="btn" data-conf="40" onclick="setConfPreset(40)">40%</button>
+        <button type="button" class="btn" data-conf="55" onclick="setConfPreset(55)">55%</button>
+        <button type="button" class="btn" data-conf="70" onclick="setConfPreset(70)">70%</button>
+      </div>
+      <p class="conf-hint">Same as <code>POST /detection/confidence</code> with <code>{"confidence": 0.55}</code>. Detections below this level show on the feed but do not open a lid.</p>
     </div>
 
     <div class="card">
@@ -447,6 +483,7 @@ const camUsbBtn = document.getElementById('cam-usb');
 const btnFlipH = document.getElementById('btn-fliph');
 const btnFlipV = document.getElementById('btn-flipv');
 const btnRotate = document.getElementById('btn-rotate');
+const confInput = document.getElementById('conf-input');
 let prevState = { paper: {}, plastic: {} };
 let shownPct = { paper: 0, plastic: 0 };
 let fitContain = true;
@@ -516,6 +553,55 @@ function toggleFlip(axis) {
   else postTransform({ flip_v: !transform.flip_v });
 }
 function rotateStep() { postTransform({ rotate_step: true }); }
+
+/* ── Detection confidence (lid-open threshold) ── */
+function renderConfidence(pct) {
+  document.getElementById('conf-val').textContent = pct;
+  document.getElementById('conf-current').textContent = pct + '%';
+  document.getElementById('conf-decimal').textContent = '(' + (pct / 100).toFixed(2) + ')';
+  document.querySelectorAll('.conf-presets .btn').forEach(btn => {
+    btn.classList.toggle('on', +btn.dataset.conf === pct);
+  });
+}
+
+async function sendConfidence() {
+  const pct = +confInput.value;
+  renderConfidence(pct);
+  try {
+    const r = await fetch('/detection/confidence', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confidence: pct / 100 })
+    });
+    if (r.ok) {
+      const d = await r.json();
+      const saved = Math.round((d.confidence || pct / 100) * 100);
+      renderConfidence(saved);
+      confInput.value = saved;
+      addLog('Lid threshold → ' + saved + '% (' + (saved / 100).toFixed(2) + ')', 'level');
+    } else addLog('Confidence update failed', 'close');
+  } catch { addLog('Confidence request failed', 'close'); }
+}
+
+function setConfPreset(pct) {
+  confInput.value = pct;
+  sendConfidence();
+}
+
+async function manualLid(bin, action) {
+  try {
+    const r = await fetch('/dustbin/' + bin + '/lid', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action })
+    });
+    if (r.ok) {
+      addLog(bin + ' lid ' + action + ' (manual)', action === 'open' ? 'open' : 'close');
+      poll();
+    } else {
+      const e = await r.json().catch(() => ({}));
+      addLog(bin + ' lid ' + action + ' failed: ' + (e.error || r.status), 'close');
+    }
+  } catch { addLog(bin + ' lid request failed', 'close'); }
+}
 
 /* ── CPU temperature / thermal throttle ── */
 function updateThermal(sys) {
@@ -650,6 +736,11 @@ async function poll() {
       if (!switching) setCamButtons(data.camera.type);
       if (data.camera.transform) { transform = data.camera.transform; renderTransform(); }
     }
+    if (data.detection && data.detection.confidence !== undefined && document.activeElement !== confInput) {
+      const pct = Math.round(data.detection.confidence * 100);
+      confInput.value = pct;
+      renderConfidence(pct);
+    }
     if (data.stream) {
       document.getElementById('meta-fps').textContent =
         (data.stream.fps || 0).toFixed(1) + ' / ' + (data.stream.target_fps || 30);
@@ -685,6 +776,10 @@ async function sendAngle(bin) {
     input.addEventListener('change', () => sendAngle(bin));
   });
 });
+
+confInput.addEventListener('input', e => renderConfidence(+e.target.value));
+confInput.addEventListener('change', sendConfidence);
+renderConfidence(+confInput.value);
 
 poll();
 setInterval(poll, 1500);

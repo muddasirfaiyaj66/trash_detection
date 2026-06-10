@@ -7,8 +7,10 @@ import os
 # ── Model ─────────────────────────────────────────────────────────────────────
 MODEL_PATH     = "best.pt"   # copy best.pt into the raspi/ folder
 # Lower confidence = more (and earlier) detections so the lid triggers promptly.
-# Raise toward 0.5 if you get false positives.
+# Raise toward 0.5 if you get false positives. Adjustable live from the dashboard.
 CONFIDENCE     = float(os.environ.get("CONFIDENCE", "0.4"))
+# YOLO inference floor — detections below the dashboard threshold still draw boxes.
+YOLO_MIN_CONF  = float(os.environ.get("YOLO_MIN_CONF", "0.15"))
 LINE_WIDTH     = int(os.environ.get("LINE_WIDTH", "1"))
 # Shrink drawn boxes toward their center (1.0 = full YOLO size). Lower = tighter boxes.
 BOX_SCALE      = float(os.environ.get("BOX_SCALE", "0.80"))

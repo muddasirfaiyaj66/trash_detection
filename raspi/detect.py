@@ -23,9 +23,10 @@ from ultralytics import YOLO
 
 from config import (
     MODEL_PATH, CLASS_NAMES, CAMERA_TYPE, USB_CAMERA_INDEX, ESP32_ENABLED,
-    STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ, USE_NCNN, CPU_THREADS, BOX_SCALE, LINE_WIDTH,
-    CAMERA_WIDTH, CAMERA_HEIGHT, MJPEG_QUALITY,
+    STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ, USE_NCNN, CPU_THREADS, BOX_SCALE,
+    CAMERA_WIDTH, CAMERA_HEIGHT, MJPEG_QUALITY, CONFIDENCE,
 )
+from pipeline import get_confidence
 
 try:
     cv2.setNumThreads(CPU_THREADS if CPU_THREADS > 0 else _cores)
@@ -95,6 +96,7 @@ def main():
     log.info("  Classes monitored: %s", CLASS_NAMES)
     log.info("  Stream %d FPS | YOLO %d FPS @ imgsz %d", STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ)
     log.info("  Camera %dx%d | MJPEG quality %d | box scale %.0f%%", CAMERA_WIDTH, CAMERA_HEIGHT, MJPEG_QUALITY, BOX_SCALE * 100)
+    log.info("  Lid opens at ≥ %.0f%% confidence", get_confidence() * 100)
     log.info("=" * 60)
 
     model = load_model()

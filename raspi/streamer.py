@@ -24,7 +24,7 @@ except ImportError:
 from config import (
     STREAM_HOST, STREAM_PORT, MJPEG_QUALITY, MJPEG_MAX_FPS, ESP32_ENABLED,
     CAMERA_TYPE, USB_CAMERA_INDEX, CAMERA_WIDTH, CAMERA_HEIGHT,
-    STREAM_FPS, INFERENCE_FPS,
+    STREAM_FPS, INFERENCE_FPS, CONFIDENCE,
 )
 from dustbin_api import dustbin_state, _lock
 
@@ -192,8 +192,10 @@ def status():
     try:
         import pipeline
         system = pipeline.thermal_state()
+        detection = {"confidence": pipeline.get_confidence()}
     except Exception:
         system = {"cpu_temp": 0.0, "throttled": False}
+        detection = {"confidence": CONFIDENCE}
     with _lock:
         data = {
             "paper":   dict(dustbin_state["paper"]),
@@ -205,6 +207,7 @@ def status():
                 "height": CAMERA_HEIGHT,
                 "transform": camera.get_camera_transform(),
             },
+            "detection": detection,
             "stream": _stream_status(),
             "system": system,
         }
@@ -247,6 +250,47 @@ def camera_transform():
         return jsonify({"error": str(e)}), 400
     log.info("Camera transform → %s", t)
     return jsonify({"status": "ok", "transform": t})
+
+
+@app.route("/detection/confidence", methods=["POST"])
+def set_detection_confidence():
+    """Set lid-open threshold: {"confidence": 0.0–1.0}"""
+    import pipeline
+    from flask import request
+    data = request.get_json(silent=True) or {}
+    if "confidence" not in data:
+        return jsonify({"error": "confidence required"}), 400
+    try:
+        conf = pipeline.set_confidence(float(data["confidence"]))
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid confidence"}), 400
+    log.info("Lid-open confidence threshold → %.0f%%", conf * 100)
+    return jsonify({"status": "ok", "confidence": conf})
+
+
+@app.route("/detection/confidence", methods=["GET"])
+def get_detection_confidence():
+    import pipeline
+    return jsonify({"confidence": pipeline.get_confidence()})
+
+
+@app.route("/dustbin/<bin_name>/lid", methods=["POST"])
+def dustbin_lid_control(bin_name):
+    """Manual lid test from dashboard: {"action": "open"|"close"}"""
+    from flask import request
+    from dustbin_api import open_lid, close_lid
+    if bin_name not in ("paper", "plastic"):
+        return jsonify({"error": "invalid bin"}), 400
+    data = request.get_json(silent=True) or {}
+    action = (data.get("action") or "").lower()
+    if action == "open":
+        open_lid(bin_name)
+    elif action == "close":
+        close_lid(bin_name)
+    else:
+        return jsonify({"error": "action must be open or close"}), 400
+    with _lock:
+        return jsonify({"status": "ok", "bin": bin_name, "state": dict(dustbin_state[bin_name])})
 
 
 @app.route("/config", methods=["POST"])

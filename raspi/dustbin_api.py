@@ -77,8 +77,15 @@ def open_lid(bin_name: str):
     log.info("🔓 Opening lid → %s dustbin", bin_name)
     resp = _post(_OPEN_EP[bin_name])
     with _lock:
-        dustbin_state[bin_name]["lid"] = "open"
-        dustbin_state[bin_name]["last_detected"] = time.time()
+        if resp is not None:
+            lid = resp.get("lid", "open")
+            dustbin_state[bin_name]["lid"] = "open" if lid in ("open", "opening") else lid
+            dustbin_state[bin_name]["last_detected"] = time.time()
+        elif not ESP32_ENABLED:
+            dustbin_state[bin_name]["lid"] = "open"
+            dustbin_state[bin_name]["last_detected"] = time.time()
+        else:
+            log.warning("Open lid failed for %s — state unchanged", bin_name)
     log.debug("Open lid response: %s", resp)
 
 
@@ -87,13 +94,26 @@ def close_lid(bin_name: str):
     log.info("🔒 Closing lid → %s dustbin", bin_name)
     resp = _post(_CLOSE_EP[bin_name])
     with _lock:
-        dustbin_state[bin_name]["lid"] = "closed"
+        if resp is not None:
+            lid = resp.get("lid", "closed")
+            dustbin_state[bin_name]["lid"] = "closed" if lid in ("closed", "closing") else lid
+        elif not ESP32_ENABLED:
+            dustbin_state[bin_name]["lid"] = "closed"
+        else:
+            log.warning("Close lid failed for %s — state unchanged", bin_name)
     log.debug("Close lid response: %s", resp)
 
 
-def on_detection(class_id: int):
+def _sync_lid_from_esp32(lid: str) -> str:
+    """Map ESP32 lid string to dashboard open/closed."""
+    if lid in ("open", "opening"):
+        return "open"
+    return "closed"
+
+
+def on_detection(class_id: int, confidence: float | None = None):
     """
-    Called whenever YOLO detects class_id.
+    Called when YOLO detects class_id at or above the lid-open threshold.
     Opens the matching dustbin lid (idempotent – won't re-send if already open).
     Updates the last_detected timestamp so the auto-close timer resets.
     """
@@ -101,14 +121,10 @@ def on_detection(class_id: int):
     if bin_name is None:
         return
     with _lock:
-        already_open = dustbin_state[bin_name]["lid"] == "open"
         dustbin_state[bin_name]["last_detected"] = time.time()
 
-    if not already_open:
-        # Send in a background thread so detection loop isn't blocked
-        threading.Thread(target=open_lid, args=(bin_name,), daemon=True).start()
-    else:
-        log.debug("Lid already open for %s – refreshing timer only", bin_name)
+    # Always POST open — ESP32 resets its auto-close timer when lid is already open.
+    threading.Thread(target=open_lid, args=(bin_name,), daemon=True).start()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -158,6 +174,8 @@ class FillLevelPoller(threading.Thread):
                         st["level_pct"] = int(data.get("level", st["level_pct"]))
                         st["open_deg"] = int(data.get("open_deg", st["open_deg"]))
                         st["close_deg"] = int(data.get("close_deg", st["close_deg"]))
+                        if "lid" in data:
+                            st["lid"] = _sync_lid_from_esp32(str(data["lid"]))
                         pct = st["level_pct"]
                         open_deg = st["open_deg"]
                         close_deg = st["close_deg"]

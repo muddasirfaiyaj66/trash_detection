@@ -97,9 +97,8 @@ const WifiCredential WIFI_NETWORKS[] = {
 #define ULTRA_SAMPLES     5
 
 // ── Auto-close safety (ms) ───────────────────────────────────────────────
-//  Each bin independently closes if it hears no /close from the Pi within
-//  this time. Protects against Pi crash or network drop.
-#define AUTO_CLOSE_MS     2000   // 2 seconds
+//  Safety backup if the Pi stops sending /open. Must exceed Pi LID_OPEN_DURATION (5 s).
+#define AUTO_CLOSE_MS     8000   // 8 seconds
 
 // ── Status LED ────────────────────────────────────────────────────────────
 #define LED_PIN           2
