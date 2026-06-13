@@ -1,0 +1,21 @@
+{
+  "categories": [
+    {
+      "id": 0,
+      "name": "background"
+    },
+    {
+      "id": 1,
+      "name": "paper"
+    },
+    {
+      "id": 2,
+      "name": "plastic"
+    }
+  ],
+  "info": {
+    "year": 2026,
+    "version": "1.0",
+    "contributor": "Label Studio"
+  }
+}

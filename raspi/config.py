@@ -3,6 +3,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 import os
+import threading
 
 # ── Model ─────────────────────────────────────────────────────────────────────
 MODEL_PATH     = "best.pt"   # copy best.pt into the raspi/ folder
@@ -15,10 +16,27 @@ LINE_WIDTH     = int(os.environ.get("LINE_WIDTH", "1"))
 # Shrink drawn boxes toward their center (1.0 = full YOLO size). Lower = tighter boxes.
 BOX_SCALE      = float(os.environ.get("BOX_SCALE", "0.80"))
 
-# Class indices from data.yaml:
-# data.yaml classes (2-class model):  0=paper | 1=plastic
-DETECT_CLASSES = [0, 1]
-CLASS_NAMES    = {0: "paper", 1: "plastic"}
+# Runtime confidence (adjustable live from dashboard Settings tab)
+_conf_lock = threading.Lock()
+_runtime_confidence = CONFIDENCE
+
+
+def get_confidence() -> float:
+    with _conf_lock:
+        return _runtime_confidence
+
+
+def set_confidence(value: float) -> float:
+    global _runtime_confidence
+    v = max(0.05, min(0.95, float(value)))
+    with _conf_lock:
+        _runtime_confidence = v
+    return v
+
+# Class indices from data.yaml (3-class model):
+#   0=background | 1=paper | 2=plastic  — we detect 1 & 2 only
+DETECT_CLASSES = [1, 2]
+CLASS_NAMES    = {1: "paper", 2: "plastic"}
 
 # ── Camera (pick ONE type for your hardware) ──────────────────────────────────
 #

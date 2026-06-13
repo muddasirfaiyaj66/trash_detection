@@ -29,8 +29,8 @@ _session.mount("https://", _adapter)
 _lock = threading.Lock()
 
 dustbin_state = {
-    "paper":   {"lid": "closed", "level_pct": 0, "last_detected": 0, "open_deg": 0,  "close_deg": 134},
-    "plastic": {"lid": "closed", "level_pct": 0, "last_detected": 0, "open_deg": 45, "close_deg": 168},
+    "paper":   {"lid": "closed", "level_pct": 0, "last_detected": 0, "open_deg": 0,  "close_deg": 134, "manual": None},
+    "plastic": {"lid": "closed", "level_pct": 0, "last_detected": 0, "open_deg": 45, "close_deg": 168, "manual": None},
 }
 
 # ── Endpoint maps ─────────────────────────────────────────────────────────────
@@ -38,8 +38,8 @@ _OPEN_EP   = {"paper": PAPER_LID_OPEN_EP,   "plastic": PLASTIC_LID_OPEN_EP}
 _CLOSE_EP  = {"paper": PAPER_LID_CLOSE_EP,  "plastic": PLASTIC_LID_CLOSE_EP}
 _STATUS_EP = {"paper": PAPER_STATUS_EP, "plastic": PLASTIC_STATUS_EP}
 
-# ── Class index → dustbin name ────────────────────────────────────────────────
-CLASS_TO_BIN = {0: "paper", 1: "plastic"}
+# Class index → dustbin name (data.yaml: 1=paper, 2=plastic)
+CLASS_TO_BIN = {1: "paper", 2: "plastic"}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -111,6 +111,31 @@ def _sync_lid_from_esp32(lid: str) -> str:
     return "closed"
 
 
+def set_lid_manual(bin_name: str, mode: str | None):
+    """
+    Manual lid override from dashboard.
+    mode: 'open' | 'closed' | 'auto' (None) — held until user selects Auto again.
+    """
+    if bin_name not in ("paper", "plastic"):
+        raise ValueError("invalid bin")
+    if mode == "auto":
+        mode = None
+    if mode not in (None, "open", "closed"):
+        raise ValueError("mode must be open, closed, or auto")
+
+    with _lock:
+        dustbin_state[bin_name]["manual"] = mode
+
+    if mode == "open":
+        log.info("Manual HOLD OPEN → %s", bin_name)
+        threading.Thread(target=open_lid, args=(bin_name,), daemon=True).start()
+    elif mode == "closed":
+        log.info("Manual HOLD CLOSED → %s", bin_name)
+        threading.Thread(target=close_lid, args=(bin_name,), daemon=True).start()
+    else:
+        log.info("Manual override OFF → %s (auto detection)", bin_name)
+
+
 def on_detection(class_id: int, confidence: float | None = None):
     """
     Called when YOLO detects class_id at or above the lid-open threshold.
@@ -121,6 +146,12 @@ def on_detection(class_id: int, confidence: float | None = None):
     if bin_name is None:
         return
     with _lock:
+        manual = dustbin_state[bin_name].get("manual")
+        if manual == "closed":
+            return
+        if manual == "open":
+            dustbin_state[bin_name]["last_detected"] = time.time()
+            return
         dustbin_state[bin_name]["last_detected"] = time.time()
 
     # Always POST open — ESP32 resets its auto-close timer when lid is already open.
@@ -145,6 +176,9 @@ class LidAutoCloseThread(threading.Thread):
             now = time.time()
             for bin_name in ("paper", "plastic"):
                 with _lock:
+                    manual = dustbin_state[bin_name].get("manual")
+                    if manual:
+                        continue
                     lid_open       = dustbin_state[bin_name]["lid"] == "open"
                     last_detected  = dustbin_state[bin_name]["last_detected"]
                 if lid_open and (now - last_detected) >= LID_OPEN_DURATION:

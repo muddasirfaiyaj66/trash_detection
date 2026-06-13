@@ -2,5 +2,5 @@ train: F:\trash_detection\train\images
 val: F:\trash_detection\valid\images
 test: F:\trash_detection\test\images
 
-nc: 2
-names: ["paper", "plastic"]
+nc: 3
+names: ["background", "paper","plastic"]

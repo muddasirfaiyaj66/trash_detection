@@ -16,7 +16,7 @@
 
 # ── YOLO Runs and Model Weights ───────────────────────────────────────────────
 runs/
-*.pt
+
 
 # ── Python Environment & Cache ────────────────────────────────────────────────
 venv/

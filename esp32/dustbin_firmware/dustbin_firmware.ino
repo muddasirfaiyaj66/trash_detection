@@ -427,7 +427,7 @@ void setup() {
     delay(600);
     Serial.println(F("\n╔══════════════════════════════════════════╗"));
     Serial.println(F(  "║  Dual Dustbin Controller  –  ESP32-S3   ║"));
-    Serial.println(F(  "║  Paper (class 0)  +  Plastic (class 1)  ║"));
+    Serial.println(F(  "║  Paper (class 1)  +  Plastic (class 2)  ║"));
     Serial.println(F(  "╚══════════════════════════════════════════╝\n"));
 
     // GPIO
