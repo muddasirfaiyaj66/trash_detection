@@ -24,8 +24,8 @@ except ImportError:
 from config import (
     STREAM_HOST, STREAM_PORT, MJPEG_QUALITY, MJPEG_MAX_FPS, ESP32_ENABLED,
     CAMERA_TYPE, USB_CAMERA_INDEX, CAMERA_WIDTH, CAMERA_HEIGHT,
-    STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ, DETECT_CLASSES, CLASS_NAMES,
-    get_confidence, set_confidence,
+    STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ, DETECT_CLASSES, CLASS_NAMES, YOLO_MIN_CONF,
+    get_confidence, set_confidence, get_lid_open_duration, set_lid_open_duration,
 )
 from dustbin_api import dustbin_state, _lock, set_lid_manual
 
@@ -210,6 +210,8 @@ def status():
             "system": system,
             "detection": {
                 "confidence": get_confidence(),
+                "yolo_min_conf": YOLO_MIN_CONF,
+                "lid_open_duration": get_lid_open_duration(),
                 "imgsz": YOLO_IMGSZ,
                 "classes": DETECT_CLASSES,
                 "class_names": CLASS_NAMES,
@@ -256,18 +258,50 @@ def camera_transform():
     return jsonify({"status": "ok", "transform": t})
 
 
+@app.route("/settings", methods=["GET", "POST"])
+def settings_all():
+    """GET/POST all live dashboard settings (confidence, auto-close delay)."""
+    from flask import request
+    if request.method == "GET":
+        return jsonify(_settings_payload())
+    data = request.get_json(silent=True) or {}
+    out = {}
+    if "confidence" in data:
+        try:
+            out["confidence"] = set_confidence(data["confidence"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "invalid confidence"}), 400
+    if "lid_open_duration" in data:
+        try:
+            out["lid_open_duration"] = set_lid_open_duration(data["lid_open_duration"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "invalid lid_open_duration"}), 400
+    if not out:
+        return jsonify({"error": "no settings provided"}), 400
+    log.info("Settings updated → %s", out)
+    payload = _settings_payload()
+    payload.update(out)
+    return jsonify({"status": "ok", **payload})
+
+
+def _settings_payload() -> dict:
+    return {
+        "confidence": get_confidence(),
+        "lid_open_duration": get_lid_open_duration(),
+        "yolo_min_conf": YOLO_MIN_CONF,
+        "imgsz": YOLO_IMGSZ,
+        "classes": DETECT_CLASSES,
+        "class_names": CLASS_NAMES,
+    }
+
+
 @app.route("/settings/detection", methods=["GET", "POST"])
 @app.route("/detection/confidence", methods=["GET", "POST"])
 def settings_detection():
-    """GET/POST detection confidence (live, no restart)."""
+    """GET/POST lid-open confidence threshold (live, no restart)."""
     from flask import request
     if request.method == "GET":
-        return jsonify({
-            "confidence": get_confidence(),
-            "imgsz": YOLO_IMGSZ,
-            "classes": DETECT_CLASSES,
-            "class_names": CLASS_NAMES,
-        })
+        return jsonify(_settings_payload())
     data = request.get_json(silent=True) or {}
     if "confidence" not in data:
         return jsonify({"error": "confidence required"}), 400
@@ -275,8 +309,25 @@ def settings_detection():
         conf = set_confidence(data["confidence"])
     except (TypeError, ValueError):
         return jsonify({"error": "invalid confidence"}), 400
-    log.info("Detection confidence → %.2f", conf)
-    return jsonify({"status": "ok", "confidence": conf})
+    log.info("Lid-open confidence → %.2f", conf)
+    return jsonify({"status": "ok", "confidence": conf, "lid_open_duration": get_lid_open_duration()})
+
+
+@app.route("/settings/lid", methods=["GET", "POST"])
+def settings_lid():
+    """GET/POST auto-close delay after last detection (seconds)."""
+    from flask import request
+    if request.method == "GET":
+        return jsonify({"lid_open_duration": get_lid_open_duration()})
+    data = request.get_json(silent=True) or {}
+    if "lid_open_duration" not in data:
+        return jsonify({"error": "lid_open_duration required"}), 400
+    try:
+        sec = set_lid_open_duration(data["lid_open_duration"])
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid lid_open_duration"}), 400
+    log.info("Lid auto-close delay → %.1fs", sec)
+    return jsonify({"status": "ok", "lid_open_duration": sec, "confidence": get_confidence()})
 
 
 @app.route("/dustbin/lid", methods=["POST"])
@@ -305,22 +356,56 @@ def update_config():
     bin_name = data.get("bin")
     open_deg = data.get("open_deg")
     close_deg = data.get("close_deg")
+    empty_cm = data.get("empty_cm")
+    full_cm = data.get("full_cm")
 
     if bin_name not in ("paper", "plastic"):
         return jsonify({"error": "invalid bin"}), 400
+
+    if empty_cm is not None:
+        empty_cm = float(empty_cm)
+        if not (5.0 <= empty_cm <= 80.0):
+            return jsonify({"error": "empty_cm must be between 5 and 80"}), 400
+    if full_cm is not None:
+        full_cm = float(full_cm)
+        if not (1.0 <= full_cm <= 30.0):
+            return jsonify({"error": "full_cm must be between 1 and 30"}), 400
+
+    eff_empty = empty_cm
+    eff_full = full_cm
+    with _lock:
+        st = dustbin_state[bin_name]
+        if eff_empty is None:
+            eff_empty = st.get("empty_cm", 22.0)
+        if eff_full is None:
+            eff_full = st.get("full_cm", 3.0)
+    if eff_full >= eff_empty:
+        return jsonify({"error": "full_cm must be less than empty_cm"}), 400
 
     params = {}
     if open_deg is not None:
         params["open"] = int(open_deg)
     if close_deg is not None:
         params["close"] = int(close_deg)
+    if empty_cm is not None:
+        params["empty"] = empty_cm
+    if full_cm is not None:
+        params["full"] = full_cm
+
+    if not params:
+        return jsonify({"error": "no config fields provided"}), 400
 
     if not ESP32_ENABLED:
         with _lock:
+            st = dustbin_state[bin_name]
             if open_deg is not None:
-                dustbin_state[bin_name]["open_deg"] = int(open_deg)
+                st["open_deg"] = int(open_deg)
             if close_deg is not None:
-                dustbin_state[bin_name]["close_deg"] = int(close_deg)
+                st["close_deg"] = int(close_deg)
+            if empty_cm is not None:
+                st["empty_cm"] = empty_cm
+            if full_cm is not None:
+                st["full_cm"] = full_cm
         return jsonify({"status": "ok", "config": dustbin_state[bin_name], "esp32": False})
 
     from config import ESP32_HOST, API_TIMEOUT
@@ -329,14 +414,18 @@ def update_config():
         r = requests.post(url, params=params, timeout=API_TIMEOUT)
         r.raise_for_status()
         resp_data = r.json()
-        
-        # Update our local state
+
         with _lock:
+            st = dustbin_state[bin_name]
             if "open_deg" in resp_data:
-                dustbin_state[bin_name]["open_deg"] = resp_data["open_deg"]
+                st["open_deg"] = resp_data["open_deg"]
             if "close_deg" in resp_data:
-                dustbin_state[bin_name]["close_deg"] = resp_data["close_deg"]
-                
+                st["close_deg"] = resp_data["close_deg"]
+            if "empty_cm" in resp_data:
+                st["empty_cm"] = float(resp_data["empty_cm"])
+            if "full_cm" in resp_data:
+                st["full_cm"] = float(resp_data["full_cm"])
+
         return jsonify({"status": "ok", "config": dustbin_state[bin_name]})
     except Exception as e:
         log.warning("Failed to configure ESP32 [%s]: %s", url, e)

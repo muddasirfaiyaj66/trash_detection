@@ -57,7 +57,7 @@ struct WifiCredential { const char* ssid; const char* pass; };
 const WifiCredential WIFI_NETWORKS[] = {
       { "Motorola edge",  "1234@@@###" },
     { "UIU-STUDENT",    "12345678"   },
-    { "Redmi Note 10S", "11111111"   },
+    { "Shoikot Sazzad", "11111111"   },
     { "Sagar", "96896061"   },   // ← phone hotspot (backup)
     // Add more rows here if needed:
     // { "AnotherSSID", "AnotherPassword" },
@@ -87,18 +87,18 @@ const WifiCredential WIFI_NETWORKS[] = {
 #define SERVO_STEP_MS      8     // ms per 1° when CLOSING — gentle (min ~4)
 #define SERVO_OPEN_STEP_MS 2     // ms per 1° when OPENING — fast so the lid pops open instantly
 
-// ── Bin geometry (cm) ─────────────────────────────────────────────────────
-//  Sensor mounted on inside of lid, pointing straight down.
-//  Measure your actual bin and adjust these:
-#define BIN_EMPTY_CM      22.0f  // sensor→bottom distance when bin is empty
-#define BIN_FULL_CM        3.0f  // sensor→trash distance when bin is full
+// ── Bin geometry (cm) – defaults; per-bin values adjustable via dashboard ───
+#define PAPER_EMPTY_CM    19.0f  // sensor→bottom when empty
+#define PAPER_FULL_CM      2.0f  // sensor→trash when full
+#define PLASTIC_EMPTY_CM  22.0f
+#define PLASTIC_FULL_CM    2.0f
 
 // ── Ultrasonic samples (median filter) ───────────────────────────────────
 #define ULTRA_SAMPLES     5
 
 // ── Auto-close safety (ms) ───────────────────────────────────────────────
-//  Safety backup if the Pi stops sending /open. Must exceed Pi LID_OPEN_DURATION (5 s).
-#define AUTO_CLOSE_MS     8000   // 8 seconds
+//  Backup if Pi stops sending /open. Must exceed dashboard max (60 s).
+#define AUTO_CLOSE_MS     65000  // 65 seconds
 
 // ── Status LED ────────────────────────────────────────────────────────────
 #define LED_PIN           2
@@ -130,24 +130,26 @@ struct Dustbin {
     unsigned long openedAtMs;
     int         openDeg;
     int         closeDeg;
+    float       emptyCm;
+    float       fullCm;
 };
 
-Dustbin paperBin   = { "paper",   PAPER_SERVO_PIN,   PAPER_TRIG_PIN,   PAPER_ECHO_PIN,   Servo(), LID_CLOSED, PAPER_CLOSE_DEG,   0, PAPER_OPEN_DEG,   PAPER_CLOSE_DEG };
-Dustbin plasticBin = { "plastic", PLASTIC_SERVO_PIN, PLASTIC_TRIG_PIN, PLASTIC_ECHO_PIN, Servo(), LID_CLOSED, PLASTIC_CLOSE_DEG, 0, PLASTIC_OPEN_DEG, PLASTIC_CLOSE_DEG };
+Dustbin paperBin   = { "paper",   PAPER_SERVO_PIN,   PAPER_TRIG_PIN,   PAPER_ECHO_PIN,   Servo(), LID_CLOSED, PAPER_CLOSE_DEG,   0, PAPER_OPEN_DEG,   PAPER_CLOSE_DEG,   PAPER_EMPTY_CM,   PAPER_FULL_CM };
+Dustbin plasticBin = { "plastic", PLASTIC_SERVO_PIN, PLASTIC_TRIG_PIN, PLASTIC_ECHO_PIN, Servo(), LID_CLOSED, PLASTIC_CLOSE_DEG, 0, PLASTIC_OPEN_DEG, PLASTIC_CLOSE_DEG, PLASTIC_EMPTY_CM, PLASTIC_FULL_CM };
 Dustbin* bins[2]   = { &paperBin, &plasticBin };
 
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Ultrasonic – median-filtered distance (cm)
 // ─────────────────────────────────────────────────────────────────────────────
-float readDistanceCM(uint8_t trigPin, uint8_t echoPin) {
+float readDistanceCM(Dustbin* b) {
     float s[ULTRA_SAMPLES];
     for (int i = 0; i < ULTRA_SAMPLES; i++) {
-        digitalWrite(trigPin, LOW);  delayMicroseconds(2);
-        digitalWrite(trigPin, HIGH); delayMicroseconds(10);
-        digitalWrite(trigPin, LOW);
-        long dur = pulseIn(echoPin, HIGH, 30000UL);
-        s[i] = (dur == 0) ? BIN_EMPTY_CM : (dur * 0.0343f / 2.0f);
+        digitalWrite(b->trigPin, LOW);  delayMicroseconds(2);
+        digitalWrite(b->trigPin, HIGH); delayMicroseconds(10);
+        digitalWrite(b->trigPin, LOW);
+        long dur = pulseIn(b->echoPin, HIGH, 30000UL);
+        s[i] = (dur == 0) ? b->emptyCm : (dur * 0.0343f / 2.0f);
         delay(15);
     }
     // Bubble sort for median
@@ -157,10 +159,10 @@ float readDistanceCM(uint8_t trigPin, uint8_t echoPin) {
     return s[ULTRA_SAMPLES / 2];
 }
 
-int distToLevel(float cm) {
-    if (cm >= BIN_EMPTY_CM) return 0;
-    if (cm <= BIN_FULL_CM)  return 100;
-    return (int)(((BIN_EMPTY_CM - cm) / (BIN_EMPTY_CM - BIN_FULL_CM)) * 100.0f);
+int distToLevel(Dustbin* b, float cm) {
+    if (cm >= b->emptyCm) return 0;
+    if (cm <= b->fullCm)  return 100;
+    return (int)(((b->emptyCm - cm) / (b->emptyCm - b->fullCm)) * 100.0f);
 }
 
 
@@ -216,24 +218,28 @@ const char* lidStr(LidState s) {
 //  JSON builders
 // ─────────────────────────────────────────────────────────────────────────────
 String jsonLevel(Dustbin* b) {
-    float cm  = readDistanceCM(b->trigPin, b->echoPin);
-    int   lvl = distToLevel(cm);
+    float cm  = readDistanceCM(b);
+    int   lvl = distToLevel(b, cm);
     JsonDocument doc;
     doc["level"]       = lvl;
     doc["distance_cm"] = serialized(String(cm, 1));
+    doc["empty_cm"]    = serialized(String(b->emptyCm, 1));
+    doc["full_cm"]     = serialized(String(b->fullCm, 1));
     doc["lid"]         = lidStr(b->lidState);
     doc["bin"]         = b->name;
     String out; serializeJson(doc, out); return out;
 }
 
 String jsonStatus(Dustbin* b) {
-    float cm  = readDistanceCM(b->trigPin, b->echoPin);
-    int   lvl = distToLevel(cm);
+    float cm  = readDistanceCM(b);
+    int   lvl = distToLevel(b, cm);
     JsonDocument doc;
     doc["bin"]         = b->name;
     doc["lid"]         = lidStr(b->lidState);
     doc["level"]       = lvl;
     doc["distance_cm"] = serialized(String(cm, 1));
+    doc["empty_cm"]    = serialized(String(b->emptyCm, 1));
+    doc["full_cm"]     = serialized(String(b->fullCm, 1));
     doc["ip"]          = WiFi.localIP().toString();
     doc["ssid"]        = WiFi.SSID();
     doc["rssi_dbm"]    = WiFi.RSSI();
@@ -266,6 +272,38 @@ void sendJSON(AsyncWebServerRequest* req, int code, const String& json) {
 }
 
 
+void applyBinConfig(Dustbin* b, AsyncWebServerRequest* req) {
+    if (req->hasParam("open")) {
+        b->openDeg = req->getParam("open")->value().toInt();
+    }
+    if (req->hasParam("close")) {
+        b->closeDeg = req->getParam("close")->value().toInt();
+    }
+    if (req->hasParam("empty")) {
+        float v = req->getParam("empty")->value().toFloat();
+        if (v >= 5.0f && v <= 80.0f) {
+            b->emptyCm = v;
+            if (b->fullCm >= b->emptyCm)
+                b->fullCm = max(1.0f, b->emptyCm - 1.0f);
+        }
+    }
+    if (req->hasParam("full")) {
+        float v = req->getParam("full")->value().toFloat();
+        if (v >= 1.0f && v <= 30.0f && v < b->emptyCm) b->fullCm = v;
+    }
+}
+
+String jsonBinConfig(Dustbin* b) {
+    JsonDocument doc;
+    doc["bin"] = b->name;
+    doc["open_deg"]  = b->openDeg;
+    doc["close_deg"] = b->closeDeg;
+    doc["empty_cm"]  = serialized(String(b->emptyCm, 1));
+    doc["full_cm"]   = serialized(String(b->fullCm, 1));
+    String j; serializeJson(doc, j); return j;
+}
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Route registration – all 11 endpoints
 // ─────────────────────────────────────────────────────────────────────────────
@@ -294,12 +332,16 @@ void setupRoutes() {
         doc["hostname"] = HOSTNAME ".local";
         
         JsonObject paper = doc["paper"].to<JsonObject>();
-        paper["open_deg"] = paperBin.openDeg;
+        paper["open_deg"]  = paperBin.openDeg;
         paper["close_deg"] = paperBin.closeDeg;
-        
+        paper["empty_cm"]  = serialized(String(paperBin.emptyCm, 1));
+        paper["full_cm"]   = serialized(String(paperBin.fullCm, 1));
+
         JsonObject plastic = doc["plastic"].to<JsonObject>();
-        plastic["open_deg"] = plasticBin.openDeg;
+        plastic["open_deg"]  = plasticBin.openDeg;
         plastic["close_deg"] = plasticBin.closeDeg;
+        plastic["empty_cm"]  = serialized(String(plasticBin.emptyCm, 1));
+        plastic["full_cm"]   = serialized(String(plasticBin.fullCm, 1));
         
         String j; serializeJson(doc, j);
         sendJSON(req, 200, j);
@@ -327,17 +369,8 @@ void setupRoutes() {
         sendJSON(req, 200, j);
     });
     server.on("/api/dustbin/paper/config", HTTP_ANY, [](AsyncWebServerRequest* req) {
-        if (req->hasParam("open")) {
-            paperBin.openDeg = req->getParam("open")->value().toInt();
-        }
-        if (req->hasParam("close")) {
-            paperBin.closeDeg = req->getParam("close")->value().toInt();
-        }
-        JsonDocument doc;
-        doc["bin"] = "paper";
-        doc["open_deg"] = paperBin.openDeg;
-        doc["close_deg"] = paperBin.closeDeg;
-        String j; serializeJson(doc, j);
+        applyBinConfig(&paperBin, req);
+        String j = jsonBinConfig(&paperBin);
         Serial.printf("[API] POST /paper/config → %s\n", j.c_str());
         sendJSON(req, 200, j);
     });
@@ -364,17 +397,8 @@ void setupRoutes() {
         sendJSON(req, 200, j);
     });
     server.on("/api/dustbin/plastic/config", HTTP_ANY, [](AsyncWebServerRequest* req) {
-        if (req->hasParam("open")) {
-            plasticBin.openDeg = req->getParam("open")->value().toInt();
-        }
-        if (req->hasParam("close")) {
-            plasticBin.closeDeg = req->getParam("close")->value().toInt();
-        }
-        JsonDocument doc;
-        doc["bin"] = "plastic";
-        doc["open_deg"] = plasticBin.openDeg;
-        doc["close_deg"] = plasticBin.closeDeg;
-        String j; serializeJson(doc, j);
+        applyBinConfig(&plasticBin, req);
+        String j = jsonBinConfig(&plasticBin);
         Serial.printf("[API] POST /plastic/config → %s\n", j.c_str());
         sendJSON(req, 200, j);
     });

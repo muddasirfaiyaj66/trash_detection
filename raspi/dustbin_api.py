@@ -10,8 +10,8 @@ from requests.adapters import HTTPAdapter
 from config import (
     PAPER_LID_OPEN_EP, PAPER_LID_CLOSE_EP, PAPER_STATUS_EP,
     PLASTIC_LID_OPEN_EP, PLASTIC_LID_CLOSE_EP, PLASTIC_STATUS_EP,
-    LID_OPEN_DURATION, LEVEL_POLL_INTERVAL, API_TIMEOUT,
-    CLASS_NAMES, ESP32_ENABLED,
+    get_lid_open_duration, LEVEL_POLL_INTERVAL, API_TIMEOUT,
+    CLASS_NAMES, ESP32_ENABLED, YOLO_MIN_CONF,
 )
 
 log = logging.getLogger(__name__)
@@ -29,8 +29,8 @@ _session.mount("https://", _adapter)
 _lock = threading.Lock()
 
 dustbin_state = {
-    "paper":   {"lid": "closed", "level_pct": 0, "last_detected": 0, "open_deg": 0,  "close_deg": 134, "manual": None},
-    "plastic": {"lid": "closed", "level_pct": 0, "last_detected": 0, "open_deg": 45, "close_deg": 168, "manual": None},
+    "paper":   {"lid": "closed", "level_pct": 0, "last_detected": 0, "open_deg": 0,  "close_deg": 134, "empty_cm": 22.0, "full_cm": 3.0, "manual": None},
+    "plastic": {"lid": "closed", "level_pct": 0, "last_detected": 0, "open_deg": 45, "close_deg": 168, "empty_cm": 22.0, "full_cm": 3.0, "manual": None},
 }
 
 # ── Endpoint maps ─────────────────────────────────────────────────────────────
@@ -170,10 +170,11 @@ class LidAutoCloseThread(threading.Thread):
     def run(self):
         if not ESP32_ENABLED:
             return
-        log.info("LidAutoCloseThread started (timeout=%.1fs)", LID_OPEN_DURATION)
+        log.info("LidAutoCloseThread started (timeout=%.1fs)", get_lid_open_duration())
         while True:
             time.sleep(0.5)
             now = time.time()
+            close_after = get_lid_open_duration()
             for bin_name in ("paper", "plastic"):
                 with _lock:
                     manual = dustbin_state[bin_name].get("manual")
@@ -181,7 +182,7 @@ class LidAutoCloseThread(threading.Thread):
                         continue
                     lid_open       = dustbin_state[bin_name]["lid"] == "open"
                     last_detected  = dustbin_state[bin_name]["last_detected"]
-                if lid_open and (now - last_detected) >= LID_OPEN_DURATION:
+                if lid_open and (now - last_detected) >= close_after:
                     threading.Thread(target=close_lid, args=(bin_name,), daemon=True).start()
 
 
@@ -208,6 +209,12 @@ class FillLevelPoller(threading.Thread):
                         st["level_pct"] = int(data.get("level", st["level_pct"]))
                         st["open_deg"] = int(data.get("open_deg", st["open_deg"]))
                         st["close_deg"] = int(data.get("close_deg", st["close_deg"]))
+                        if "empty_cm" in data:
+                            st["empty_cm"] = float(data["empty_cm"])
+                        if "full_cm" in data:
+                            st["full_cm"] = float(data["full_cm"])
+                        if "distance_cm" in data:
+                            st["distance_cm"] = float(data["distance_cm"])
                         if "lid" in data:
                             st["lid"] = _sync_lid_from_esp32(str(data["lid"]))
                         pct = st["level_pct"]

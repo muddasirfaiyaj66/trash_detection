@@ -24,9 +24,8 @@ from ultralytics import YOLO
 from config import (
     MODEL_PATH, CLASS_NAMES, CAMERA_TYPE, USB_CAMERA_INDEX, ESP32_ENABLED,
     STREAM_FPS, INFERENCE_FPS, YOLO_IMGSZ, USE_NCNN, CPU_THREADS, BOX_SCALE,
-    CAMERA_WIDTH, CAMERA_HEIGHT, MJPEG_QUALITY, CONFIDENCE,
+    CAMERA_WIDTH, CAMERA_HEIGHT, MJPEG_QUALITY, CONFIDENCE, get_confidence,
 )
-from pipeline import get_confidence
 
 try:
     cv2.setNumThreads(CPU_THREADS if CPU_THREADS > 0 else _cores)

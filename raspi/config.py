@@ -123,9 +123,26 @@ PLASTIC_CONFIG_EP    = f"{_BASE_PLASTIC}/config"
 ESP32_PING_EP        = f"http://{ESP32_HOST}/ping"
 
 # ── Timing ────────────────────────────────────────────────────────────────────
-LID_OPEN_DURATION   = 5.0    # seconds lid stays open after last detection
+LID_OPEN_DURATION   = float(os.environ.get("LID_OPEN_DURATION", "5.0"))  # seconds after last detection
 LEVEL_POLL_INTERVAL = 2.0    # seconds between fill-level polls (lower = snappier dashboard)
 API_TIMEOUT         = 3      # seconds before HTTP request times out (fail fast)
+
+# Runtime lid auto-close delay (adjustable live from dashboard Settings tab)
+_lid_dur_lock = threading.Lock()
+_runtime_lid_open_duration = LID_OPEN_DURATION
+
+
+def get_lid_open_duration() -> float:
+    with _lid_dur_lock:
+        return _runtime_lid_open_duration
+
+
+def set_lid_open_duration(value: float) -> float:
+    global _runtime_lid_open_duration
+    v = max(1.0, min(60.0, float(value)))
+    with _lid_dur_lock:
+        _runtime_lid_open_duration = v
+    return v
 
 # ── Ground-station stream ─────────────────────────────────────────────────────
 # Stream runs at full camera rate; YOLO runs separately so video stays smooth.
